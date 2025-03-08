@@ -91,11 +91,11 @@
     <div class="main-content">
         <header>
             <div class="header-content">
-                <div style="display: flex; align-items: center; justify-content: center;">
-                    <div class="menu-toggle" id="menu-toggle">&#9776;</div>
-                    <h1 style="margin-left: 15px;">Dashboard de Instâncias <span class="orange-accent">Spot</span> AWS</h1>
+                <div class="header-left">
+                    <button class="menu-toggle" id="menu-toggle">☰</button>
+                    <h1>Dashboard de Instâncias <span class="orange-accent">Spot</span> AWS</h1>
                 </div>
-                <div class="header-subtitle" style="text-align: center;">Análise de preços e economia com instâncias spot</div>
+                <div class="header-subtitle">Análise de preços e economia com instâncias spot</div>
             </div>
         </header>
         
@@ -180,9 +180,35 @@
                 </div>
                 
                 <div class="filter-group">
+                    <label for="architecture-filter">Arquitetura:</label>
+                    <select id="architecture-filter">
+                        <option value="all">Todas arquiteturas</option>
+                        <option value="arm">ARM (Graviton)</option>
+                        <option value="x86">x86/x64</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="size-filter">Tamanho da Instância:</label>
+                    <select id="size-filter">
+                        <option value="all">Todos os tamanhos</option>
+                        <option value="micro">micro</option>
+                        <option value="small">small</option>
+                        <option value="medium">medium</option>
+                        <option value="large">large</option>
+                        <option value="xlarge">xlarge</option>
+                        <option value="2xlarge">2xlarge</option>
+                        <option value="4xlarge">4xlarge</option>
+                        <option value="8xlarge">8xlarge</option>
+                        <option value="16xlarge">16xlarge</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
                     <label for="interruption-filter">Nível de Interrupção:</label>
                     <select id="interruption-filter">
                         <option value="all">Todos os níveis</option>
+                        <option value="very low">Muito baixo</option>
                         <option value="low">Baixo</option>
                         <option value="medium">Médio</option>
                         <option value="high">Alto</option>
@@ -209,7 +235,7 @@
                 </div>
                 
                 <div class="dashboard-card">
-                    <h2>Top 10 Instâncias com Maior Economia</h2>
+                    <h2>Top 10 Instâncias com Maior Economia e Menor Interrupção</h2>
                     <div class="chart-container">
                         <canvas id="top-savings-chart"></canvas>
                     </div>
@@ -219,6 +245,13 @@
                     <h2>Economia Média por Sistema Operacional</h2>
                     <div class="chart-container">
                         <canvas id="os-savings-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <h2>Comparação de Arquiteturas: ARM vs x86</h2>
+                    <div class="chart-container">
+                        <canvas id="architecture-comparison-chart"></canvas>
                     </div>
                 </div>
             </div>

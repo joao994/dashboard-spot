@@ -44,21 +44,21 @@ body {
 
 /* Toggle para sidebar - agora fica dentro do header */
 .menu-toggle {
-    width: 60px;
-    height: 60px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    font-size: 28px;
-    cursor: pointer;
-    background: none;
-    border: none;
-    outline: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
 }
 
 .menu-toggle:hover {
-    background-color: rgba(255,255,255,0.1);
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-close {
@@ -85,17 +85,32 @@ header {
     margin-bottom: 20px;
 }
 
+.header-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
 header h1 {
     margin: 0;
-    padding: 0 20px;
     font-size: 24px;
+    font-weight: 500;
 }
 
 .header-subtitle {
     color: #ccc;
-    padding: 0 20px;
     margin-top: 5px;
     font-size: 14px;
+    text-align: center;
 }
 
 .orange-accent {
@@ -236,6 +251,11 @@ table th {
     color: #fff;
 }
 
+.status-very-low {
+    background-color: #c3e6cb;
+    color: #0f5132;
+}
+
 .export-btn, .aws-btn {
     background-color: #ff9900;
     color: white;
@@ -350,6 +370,26 @@ table th {
 .status-disconnected {
     background-color: #f8d7da;
     color: #721c24;
+}
+
+/* Destaque para instâncias ARM (Graviton) */
+.arm-instance {
+    position: relative;
+    font-weight: 500;
+    color: #0066cc;
+}
+
+.arm-instance::after {
+    content: "ARM";
+    font-size: 9px;
+    background-color: #e6f2ff;
+    color: #0066cc;
+    padding: 1px 4px;
+    border-radius: 3px;
+    position: relative;
+    top: -1px;
+    margin-left: 5px;
+    font-weight: bold;
 }
 
 @media (max-width: 768px) {
