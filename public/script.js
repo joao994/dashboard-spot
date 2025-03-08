@@ -230,6 +230,18 @@ function initializeFilters() {
     sizeFilter.addEventListener('change', applyFilters);
 }
 
+// Função para definir a ordem de prioridade dos níveis de interrupção
+function getInterruptionPriority(level) {
+    const priorities = {
+        'very low': 1,
+        'low': 2,
+        'medium': 3,
+        'high': 4,
+        'very high': 5
+    };
+    return priorities[level] || 999; // Valor alto para níveis desconhecidos
+}
+
 // Aplicar filtros aos dados
 function applyFilters() {
     const regionValue = regionFilter.value;
@@ -273,6 +285,11 @@ function applyFilters() {
         }
         
         return matches;
+    });
+    
+    // Ordenar por nível de interrupção (very low primeiro, very high por último)
+    filteredData.sort((a, b) => {
+        return getInterruptionPriority(a.interruptionLevel) - getInterruptionPriority(b.interruptionLevel);
     });
     
     // Reset para a primeira página quando filtros mudam
@@ -973,28 +990,35 @@ function exportCsv() {
     // Preparar cabeçalhos
     const headers = ['Tipo de Instância', 'Região', 'Sistema Operacional', 'Economia (%)', 'Nível de Interrupção'];
     
+    // Ordenar os dados por nível de interrupção
+    const dataToCsv = [...filteredData].sort((a, b) => {
+        return getInterruptionPriority(a.interruptionLevel) - getInterruptionPriority(b.interruptionLevel);
+    });
+    
     // Preparar linhas de dados
-    const rows = filteredData.map(item => [
+    const data = dataToCsv.map(item => [
         item.instanceType,
         item.region,
         formatOsName(item.os),
-        typeof item.savingsOverOnDemand === 'number' ? (item.savingsOverOnDemand).toFixed(1) : 'N/A',
+        typeof item.savingsOverOnDemand === 'number' ? item.savingsOverOnDemand.toFixed(0) + '%' : 'N/A',
         item.interruptionLevel
     ]);
     
-    // Criar conteúdo CSV
-    const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.join(','))
-    ].join('\n');
+    // Combinar cabeçalhos e dados
+    const csvContent = [headers, ...data]
+        .map(e => e.join(','))
+        .join('\n');
     
-    // Criar blob e link para download
+    // Criar um blob para download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
+    
+    // Criar link para download
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'spot_instances_data.csv');
+    link.setAttribute('download', 'spot-data.csv');
     link.style.visibility = 'hidden';
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
