@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Instâncias Spot AWS</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1009.0/aws-sdk.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            color: #333;
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        /* Layout principal com sidebar */
+        .sidebar {
+            width: 0;
+            background-color: #fff;
+            border-right: 1px solid #ddd;
+            padding: 0;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            position: fixed;
+            height: 100%;
+            left: 0;
+            top: 0;
+            color: #333;
+        }
+        
+        .sidebar.active {
+            width: 300px;
+            padding: 20px;
+        }
+        
+        .main-content {
+            flex: 1;
+            overflow-x: hidden;
+            margin-left: 0;
+            transition: margin-left 0.3s ease;
+        }
+        
+        .main-content.sidebar-open {
+            margin-left: 340px;
+        }
+        
+        /* Toggle para sidebar - agora fica dentro do header */
+        .menu-toggle {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            outline: none;
+        }
+        
+        .menu-toggle:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+        
+        .sidebar-close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            font-size: 22px;
+            cursor: pointer;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background-color: #232f3e;
+            color: white;
+            padding: 15px 0;
+            margin-bottom: 20px;
+        }
+        
+        header h1 {
+            margin: 0;
+            padding: 0 20px;
+            font-size: 24px;
+        }
+        
+        .header-subtitle {
+            color: #ccc;
+            padding: 0 20px;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+        
+        .orange-accent {
+            color: #ff9900;
+        }
+        
+        .dashboard-controls {
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .filter-group select, .filter-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .dashboard-card {
+            background-color: #fff;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .dashboard-card h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 18px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        table th, table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        table th {
+            background-color: #f9f9f9;
+        }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        .pagination button {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 8px 16px;
+            margin: 0 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .pagination button.active {
+            background-color: #ff9900;
+            color: white;
+            border-color: #ff9900;
+        }
+        
+        .pagination button:hover:not(.active) {
+            background-color: #f1f1f1;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: #666;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 15px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-low {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-medium {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-high {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-very-high {
+            background-color: #842029;
+            color: #fff;
+        }
+        
+        .export-btn, .aws-btn {
+            background-color: #ff9900;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 20px;
+            margin-right: 10px;
+        }
+        
+        .export-btn:hover, .aws-btn:hover {
+            background-color: #e68a00;
+        }
+        
+        .sidebar h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 18px;
+        }
+        
+        .aws-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .aws-form-group {
+            margin-bottom: 15px;
+        }
+        
+        .aws-form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .aws-form-group input, .aws-form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .aws-info {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #ff9900;
+            font-size: 12px;
+        }
+        
+        .savings-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .savings-card {
+            display: flex;
+            justify-content: space-between;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            align-items: center;
+            color: #333;
+        }
+        
+        .savings-amount {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        
+        .warning {
+            color: #dc3545;
+            margin-top: 5px;
+            font-size: 12px;
+        }
+        
+        .success-message {
+            color: #28a745;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        
+        .hide {
+            display: none;
+        }
+        
+        .sidebar-section {
+            margin-bottom: 30px;
+        }
+        
+        .connection-status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .status-connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .filter-group {
+                min-width: 100%;
+            }
+            
+            .sidebar {
+                position: fixed;
+                height: 100%;
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .sidebar-toggle {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar para conexão AWS -->
+    <aside class="sidebar">
+        <button class="sidebar-close" id="sidebar-close">&times;</button>
+        <div class="sidebar-section">
+            <h2>Conectar à sua conta AWS</h2>
+            <p>Forneça suas credenciais da AWS para calcular a economia potencial com instâncias spot em sua conta.</p>
+            
+            <div id="connection-status" class="connection-status status-disconnected">
+                Não conectado
+            </div>
+            
+            <form id="aws-credentials-form" class="aws-form">
+                <div class="aws-form-group">
+                    <label for="aws-access-key">Access Key ID:</label>
+                    <input type="text" id="aws-access-key" placeholder="AKIAIOSFODNN7EXAMPLE">
+                </div>
+                
+                <div class="aws-form-group">
+                    <label for="aws-secret-key">Secret Access Key:</label>
+                    <input type="password" id="aws-secret-key" placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                </div>
+                
+                <div class="aws-form-group">
+                    <label for="aws-region">Região Principal:</label>
+                    <select id="aws-region">
+                        <option value="us-east-1">US East (N. Virginia)</option>
+                        <option value="us-east-2">US East (Ohio)</option>
+                        <option value="us-west-1">US West (N. California)</option>
+                        <option value="us-west-2">US West (Oregon)</option>
+                        <option value="af-south-1">Africa (Cape Town)</option>
+                        <option value="ap-east-1">Asia Pacific (Hong Kong)</option>
+                        <option value="ap-south-1">Asia Pacific (Mumbai)</option>
+                        <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+                        <option value="ap-northeast-2">Asia Pacific (Seoul)</option>
+                        <option value="ap-northeast-3">Asia Pacific (Osaka)</option>
+                        <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                        <option value="ap-southeast-2">Asia Pacific (Sydney)</option>
+                        <option value="ca-central-1">Canada (Central)</option>
+                        <option value="eu-central-1">Europe (Frankfurt)</option>
+                        <option value="eu-west-1">Europe (Ireland)</option>
+                        <option value="eu-west-2">Europe (London)</option>
+                        <option value="eu-west-3">Europe (Paris)</option>
+                        <option value="eu-north-1">Europe (Stockholm)</option>
+                        <option value="eu-south-1">Europe (Milan)</option>
+                        <option value="me-south-1">Middle East (Bahrain)</option>
+                        <option value="sa-east-1">South America (São Paulo)</option>
+                    </select>
+                </div>
+            </form>
+            
+            <button id="connect-aws-btn" class="aws-btn">Analisar Instâncias</button>
+            <button id="save-credentials-btn" class="aws-btn">Salvar Credenciais (Local)</button>
+            <div id="credentials-status" class="success-message hide">Credenciais salvas localmente com sucesso!</div>
+            
+            <div class="aws-info">
+                <p><strong>Nota de Segurança:</strong> Suas credenciais são utilizadas apenas localmente no navegador e não são enviadas para nossos servidores.</p>
+                <p><strong>Permissões necessárias:</strong> ec2:DescribeInstances</p>
+            </div>
+        </div>
+        
+        <!-- Resultados da análise AWS -->
+        <div id="aws-analysis-summary" class="sidebar-section hide">
+            <h2>Resumo da Análise</h2>
+            
+            <div class="savings-summary">
+                <div class="savings-card">
+                    <div>
+                        <h3>Economia Mensal</h3>
+                    </div>
+                    <div id="savings-amount" class="savings-amount">$0.00</div>
+                </div>
+                
+                <button id="view-full-analysis" class="aws-btn">Ver Análise Completa</button>
+            </div>
+        </div>
+    </aside>
+    
+    <!-- Conteúdo principal -->
+    <div class="main-content">
+        <header>
+            <div class="header-content">
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <div class="menu-toggle" id="menu-toggle">&#9776;</div>
+                    <h1 style="margin-left: 15px;">Dashboard de Instâncias <span class="orange-accent">Spot</span> AWS</h1>
+                </div>
+                <div class="header-subtitle" style="text-align: center;">Análise de preços e economia com instâncias spot</div>
+            </div>
+        </header>
+        
+        <div class="container">
+            <!-- Painel de resultados da análise completa da conta AWS -->
+            <div id="aws-analysis-results" class="dashboard-card hide">
+                <h2>Análise de Economia Potencial</h2>
+                
+                <div class="savings-summary">
+                    <div class="savings-card">
+                        <div>
+                            <h3>Custo Mensal Atual (On-Demand)</h3>
+                            <p>Baseado nas instâncias EC2 encontradas</p>
+                        </div>
+                        <div id="current-cost" class="savings-amount">$0.00</div>
+                    </div>
+                    
+                    <div class="savings-card">
+                        <div>
+                            <h3>Custo Mensal Estimado (Spot)</h3>
+                            <p>Se as instâncias elegíveis fossem convertidas para Spot</p>
+                        </div>
+                        <div id="spot-cost" class="savings-amount">$0.00</div>
+                    </div>
+                    
+                    <div class="savings-card">
+                        <div>
+                            <h3>Economia Mensal Estimada</h3>
+                            <p>Considerando apenas instâncias elegíveis para Spot</p>
+                        </div>
+                        <div id="analysis-savings-amount" class="savings-amount">$0.00</div>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="savings-comparison-chart"></canvas>
+                </div>
+                
+                <div class="warning">
+                    * Os valores são estimativas baseadas nos preços atuais e podem variar. Nem todas as instâncias são elegíveis para conversão para Spot.
+                </div>
+                
+                <h3>Instâncias Analisadas</h3>
+                <table id="instances-table">
+                    <thead>
+                        <tr>
+                            <th>ID da Instância</th>
+                            <th>Tipo</th>
+                            <th>Região</th>
+                            <th>Custo Mensal (On-Demand)</th>
+                            <th>Custo Mensal (Spot)</th>
+                            <th>Economia Estimada</th>
+                            <th>Elegível para Spot</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instances-table-body">
+                        <!-- Instâncias serão listadas aqui -->
+                    </tbody>
+                </table>
+                
+                <button id="close-analysis" class="aws-btn">Fechar Análise</button>
+            </div>
+            
+            <div class="dashboard-controls">
+                <div class="filter-group">
+                    <label for="region-filter">Região:</label>
+                    <select id="region-filter">
+                        <option value="all">Todas as regiões</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="os-filter">Sistema Operacional:</label>
+                    <select id="os-filter">
+                        <option value="all">Todos os sistemas</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group">
+                    <label for="instance-filter">Tipo de Instância:</label>
+                    <input type="text" id="instance-filter" placeholder="Filtrar por tipo...">
+                </div>
+                
+                <div class="filter-group">
+                    <label for="interruption-filter">Nível de Interrupção:</label>
+                    <select id="interruption-filter">
+                        <option value="all">Todos os níveis</option>
+                        <option value="low">Baixo</option>
+                        <option value="medium">Médio</option>
+                        <option value="high">Alto</option>
+                        <option value="very high">Muito alto</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button id="export-csv" class="export-btn">Exportar para CSV</button>
+            
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <h2>Economia Média por Região</h2>
+                    <div class="chart-container">
+                        <canvas id="savings-by-region-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <h2>Distribuição de Níveis de Interrupção</h2>
+                    <div class="chart-container">
+                        <canvas id="interruption-distribution-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <h2>Top 10 Instâncias com Maior Economia</h2>
+                    <div class="chart-container">
+                        <canvas id="top-savings-chart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="dashboard-card">
+                    <h2>Economia Média por Sistema Operacional</h2>
+                    <div class="chart-container">
+                        <canvas id="os-savings-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-card">
+                <h2>Dados Detalhados</h2>
+                <div id="table-container">
+                    <table id="spot-data-table">
+                        <thead>
+                            <tr>
+                                <th>Tipo de Instância</th>
+                                <th>Região</th>
+                                <th>Sistema Operacional</th>
+                                <th>Economia (%)</th>
+                                <th>Nível de Interrupção</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Dados serão inseridos aqui -->
+                        </tbody>
+                    </table>
+                    <div class="pagination" id="pagination">
+                        <!-- Botões de paginação serão inseridos aqui -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Estado global dos dados
+        let spotData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        const rowsPerPage = 10;
+        let awsInstances = [];
+        let spotPriceMap = {};
+        let isAwsConnected = false;
+        
+        // Elementos DOM
+        const regionFilter = document.getElementById('region-filter');
+        const osFilter = document.getElementById('os-filter');
+        const instanceFilter = document.getElementById('instance-filter');
+        const interruptionFilter = document.getElementById('interruption-filter');
+        const tableBody = document.getElementById('table-body');
+        const pagination = document.getElementById('pagination');
+        const exportBtn = document.getElementById('export-csv');
+        const connectAwsBtn = document.getElementById('connect-aws-btn');
+        const saveCredentialsBtn = document.getElementById('save-credentials-btn');
+        const credentialsStatus = document.getElementById('credentials-status');
+        const awsAnalysisResults = document.getElementById('aws-analysis-results');
+        const awsAnalysisSummary = document.getElementById('aws-analysis-summary');
+        const viewFullAnalysisBtn = document.getElementById('view-full-analysis');
+        const closeAnalysisBtn = document.getElementById('close-analysis');
+        const connectionStatus = document.getElementById('connection-status');
+        const sidebarToggle = document.querySelector('.sidebar-toggle');
+        const sidebar = document.querySelector('.sidebar');
+        
+        // Função para carregar os dados da API
+        async function loadData() {
+            try {
+                const response = await fetch('http://localhost:3000/api/spot-prices');
+                spotData = await response.json();
+                
+                // Criar mapeamento de preços spot para referência rápida
+                createSpotPriceMap();
+                
+                // Inicializar os filtros
+                initializeFilters();
+                
+                // Aplicar filtros iniciais
+                applyFilters();
+                
+                // Renderizar gráficos
+                renderCharts();
+                
+                // Carregar credenciais salvas, se existirem
+                loadSavedCredentials();
+                
+            } catch (error) {
+                console.error('Erro ao carregar dados:', error);
+                document.getElementById('table-container').innerHTML = 
+                    '<div class="loading">Erro ao carregar dados. Verifique se a API está funcionando.</div>';
+            }
+        }
+        
+        // Criar mapeamento de preços spot para uso posterior
+        function createSpotPriceMap() {
+            spotPriceMap = {};
+            
+            spotData.forEach(item => {
+                const key = `${item.region}:${item.instanceType}:${item.os}`;
+                spotPriceMap[key] = {
+                    savingsPercentage: item.savingsOverOnDemand,
+                    interruptionLevel: item.interruptionLevel
+                };
+            });
+        }
+        
+        // Inicializar os filtros com valores únicos dos dados
+        function initializeFilters() {
+            // Preencher filtro de regiões
+            const regions = [...new Set(spotData.map(item => item.region))];
+            regions.sort().forEach(region => {
+                const option = document.createElement('option');
+                option.value = region;
+                option.textContent = region;
+                regionFilter.appendChild(option);
+            });
+            
+            // Preencher filtro de sistemas operacionais
+            const osList = [...new Set(spotData.map(item => item.os))];
+            osList.sort().forEach(os => {
+                const option = document.createElement('option');
+                option.value = os;
+                option.textContent = formatOsName(os);
+                osFilter.appendChild(option);
+            });
+            
+            // Adicionar eventos aos filtros
+            regionFilter.addEventListener('change', applyFilters);
+            osFilter.addEventListener('change', applyFilters);
+            instanceFilter.addEventListener('input', applyFilters);
+            interruptionFilter.addEventListener('change', applyFilters);
+        }
+        
+        // Aplicar filtros aos dados
+        function applyFilters() {
+            const regionValue = regionFilter.value;
+            const osValue = osFilter.value;
+            const instanceValue = instanceFilter.value.toLowerCase();
+            const interruptionValue = interruptionFilter.value;
+            
+            filteredData = spotData.filter(item => {
+                let matches = true;
+                
+                if (regionValue !== 'all' && item.region !== regionValue) {
+                    matches = false;
+                }
+                
+                if (osValue !== 'all' && item.os !== osValue) {
+                    matches = false;
+                }
+                
+                if (instanceValue && !item.instanceType.toLowerCase().includes(instanceValue)) {
+                    matches = false;
+                }
+                
+                if (interruptionValue !== 'all' && item.interruptionLevel !== interruptionValue) {
+                    matches = false;
+                }
+                
+                return matches;
+            });
+            
+            // Reset para a primeira página quando filtros mudam
+            currentPage = 1;
+            
+            // Renderizar tabela e paginação
+            renderTable();
+            renderPagination();
+            
+            // Atualizar gráficos com dados filtrados
+            renderCharts();
+        }
+        
+        // Renderizar tabela de dados
+        function renderTable() {
+            tableBody.innerHTML = '';
+            
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = startIndex + rowsPerPage;
+            const pageData = filteredData.slice(startIndex, endIndex);
+            
+            if (pageData.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 5;
+                cell.textContent = 'Nenhum dado encontrado para os filtros selecionados.';
+                cell.style.textAlign = 'center';
+                cell.style.padding = '20px';
+                row.appendChild(cell);
+                tableBody.appendChild(row);
+                return;
+            }
+            
+            pageData.forEach(item => {
+                const row = document.createElement('tr');
+                
+                const instanceCell = document.createElement('td');
+                instanceCell.textContent = item.instanceType;
+                row.appendChild(instanceCell);
+                
+                const regionCell = document.createElement('td');
+                regionCell.textContent = item.region;
+                row.appendChild(regionCell);
+                
+                const osCell = document.createElement('td');
+                osCell.textContent = formatOsName(item.os);
+                row.appendChild(osCell);
+                
+                const savingsCell = document.createElement('td');
+                savingsCell.textContent = typeof item.savingsOverOnDemand === 'number' 
+                    ? `${(item.savingsOverOnDemand).toFixed(0)}%` 
+                    : 'N/A';
+                row.appendChild(savingsCell);
+                
+                const interruptionCell = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.textContent = item.interruptionLevel;
+                badge.className = `status-badge status-${item.interruptionLevel.replace(' ', '-')}`;
+                interruptionCell.appendChild(badge);
+                row.appendChild(interruptionCell);
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Renderizar paginação
+        function renderPagination() {
+            pagination.innerHTML = '';
+            
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+            
+            if (totalPages <= 1) {
+                return;
+            }
+            
+            // Botão anterior
+            const prevButton = document.createElement('button');
+            prevButton.textContent = '◀';
+            prevButton.disabled = currentPage === 1;
+            prevButton.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderTable();
+                    renderPagination();
+                }
+            });
+            pagination.appendChild(prevButton);
+            
+            // Botões de página
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            
+            if (endPage - startPage < 4) {
+                startPage = Math.max(1, endPage - 4);
+            }
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const pageButton = document.createElement('button');
+                pageButton.textContent = i;
+                pageButton.classList.toggle('active', i === currentPage);
+                pageButton.addEventListener('click', () => {
+                    currentPage = i;
+                    renderTable();
+                    renderPagination();
+                });
+                pagination.appendChild(pageButton);
+            }
+            
+            // Botão próximo
+            const nextButton = document.createElement('button');
+            nextButton.textContent = '▶';
+            nextButton.disabled = currentPage === totalPages;
+            nextButton.addEventListener('click', () => {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderTable();
+                    renderPagination();
+                }
+            });
+            pagination.appendChild(nextButton);
+        }
+        
+        // Renderizar gráficos
+        function renderCharts() {
+            renderSavingsByRegionChart();
+            renderInterruptionDistributionChart();
+            renderTopSavingsChart();
+            renderOsSavingsChart();
+        }
+        
+        // Gráfico de economia média por região
+        function renderSavingsByRegionChart() {
+            const ctx = document.getElementById('savings-by-region-chart').getContext('2d');
+            
+            // Limpar gráfico existente
+            if (window.savingsByRegionChart) {
+                window.savingsByRegionChart.destroy();
+            }
+            
+            // Agrupar dados por região
+            const regionData = {};
+            filteredData.forEach(item => {
+                if (typeof item.savingsOverOnDemand === 'number') {
+                    if (!regionData[item.region]) {
+                        regionData[item.region] = {
+                            total: 0,
+                            count: 0
+                        };
+                    }
+                    regionData[item.region].total += item.savingsOverOnDemand;
+                    regionData[item.region].count++;
+                }
+            });
+            
+            // Calcular médias
+            const regions = Object.keys(regionData);
+            const averages = regions.map(region => 
+                (regionData[region].total / regionData[region].count)
+            );
+            
+            // Ordenar por média de economia (descendente)
+            const combined = regions.map((region, i) => ({
+                region,
+                average: averages[i]
+            }));
+            combined.sort((a, b) => b.average - a.average);
+            
+            window.savingsByRegionChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: combined.map(item => item.region),
+                    datasets: [{
+                        label: 'Economia média (%)',
+                        data: combined.map(item => item.average.toFixed(1)),
+                        backgroundColor: 'rgba(255, 153, 0, 0.7)',
+                        borderColor: 'rgba(255, 153, 0, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Economia média (%)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Gráfico de distribuição de níveis de interrupção
+        function renderInterruptionDistributionChart() {
+            const ctx = document.getElementById('interruption-distribution-chart').getContext('2d');
+            
+            // Limpar gráfico existente
+            if (window.interruptionChart) {
+                window.interruptionChart.destroy();
+            }
+            
+            // Contar ocorrências de cada nível
+            const countByLevel = {
+                'low': 0,
+                'medium': 0,
+                'high': 0,
+                'very high': 0
+            };
+            
+            filteredData.forEach(item => {
+                if (item.interruptionLevel in countByLevel) {
+                    countByLevel[item.interruptionLevel]++;
+                }
+            });
+            
+            const colorMap = {
+                'low': '#28a745',
+                'medium': '#ffc107',
+                'high': '#dc3545',
+                'very high': '#842029'
+            };
+            
+            window.interruptionChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(countByLevel).map(level => 
+                        level.charAt(0).toUpperCase() + level.slice(1)
+                    ),
+                    datasets: [{
+                        data: Object.values(countByLevel),
+                        backgroundColor: Object.keys(countByLevel).map(level => colorMap[level])
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Gráfico das 10 instâncias com maior economia
+        function renderTopSavingsChart() {
+            const ctx = document.getElementById('top-savings-chart').getContext('2d');
+            
+            // Limpar gráfico existente
+            if (window.topSavingsChart) {
+                window.topSavingsChart.destroy();
+            }
+            
+            // Filtrar instâncias com economia numérica e classificá-las
+            const instancesWithSavings = filteredData
+                .filter(item => typeof item.savingsOverOnDemand === 'number')
+                .sort((a, b) => b.savingsOverOnDemand - a.savingsOverOnDemand)
+                .slice(0, 10);
+            
+            window.topSavingsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: instancesWithSavings.map(item => `${item.instanceType} (${item.region})`),
+                    datasets: [{
+                        label: 'Economia (%)',
+                        data: instancesWithSavings.map(item => (item.savingsOverOnDemand).toFixed(1)),
+                        backgroundColor: 'rgba(0, 123, 255, 0.7)',
+                        borderColor: 'rgba(0, 123, 255, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Economia (%)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Gráfico de economia média por sistema operacional
+        function renderOsSavingsChart() {
+            const ctx = document.getElementById('os-savings-chart').getContext('2d');
+            
+            // Limpar gráfico existente
+            if (window.osSavingsChart) {
+                window.osSavingsChart.destroy();
+            }
+            
+            // Agrupar dados por sistema operacional
+            const osData = {};
+            filteredData.forEach(item => {
+                if (typeof item.savingsOverOnDemand === 'number') {
+                    if (!osData[item.os]) {
+                        osData[item.os] = {
+                            total: 0,
+                            count: 0
+                        };
+                    }
+                    osData[item.os].total += item.savingsOverOnDemand;
+                    osData[item.os].count++;
+                }
+            });
+            
+            // Calcular médias
+            const osList = Object.keys(osData);
+            const averages = osList.map(os => 
+                (osData[os].total / osData[os].count)
+            );
+            
+            // Ordenar por média de economia (descendente)
+            const combined = osList.map((os, i) => ({
+                os: formatOsName(os),
+                average: averages[i]
+            }));
+            combined.sort((a, b) => b.average - a.average);
+            
+            window.osSavingsChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: combined.map(item => item.os),
+                    datasets: [{
+                        label: 'Economia média (%)',
+                        data: combined.map(item => item.average.toFixed(1)),
+                        backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Economia média (%)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Gráfico de comparação de custo para análise AWS
+        function renderSavingsComparisonChart(currentCost, spotCost) {
+            const ctx = document.getElementById('savings-comparison-chart').getContext('2d');
+            
+            // Limpar gráfico existente
+            if (window.savingsComparisonChart) {
+                window.savingsComparisonChart.destroy();
+            }
+            
+            window.savingsComparisonChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Custo Mensal On-Demand', 'Custo Mensal Spot'],
+                    datasets: [{
+                        label: 'Custo Mensal (USD)',
+                        data: [currentCost.toFixed(2), spotCost.toFixed(2)],
+                        backgroundColor: [
+                            'rgba(220, 53, 69, 0.7)',
+                            'rgba(40, 167, 69, 0.7)'
+                        ],
+                        borderColor: [
+                            'rgba(220, 53, 69, 1)',
+                            'rgba(40, 167, 69, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Custo Mensal (USD)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Função para formatar o nome do sistema operacional
+        function formatOsName(os) {
+            const osMap = {
+                'linux': 'Linux',
+                'mswin': 'Windows',
+                'suse': 'SUSE Linux',
+                'rhel': 'Red Hat',
+                'amazon': 'Amazon Linux'
+            };
+            
+            return osMap[os] || os;
+        }
+        
+        // Exportar dados para CSV
+        exportBtn.addEventListener('click', () => {
+            // Preparar cabeçalhos
+            const headers = ['Tipo de Instância', 'Região', 'Sistema Operacional', 'Economia (%)', 'Nível de Interrupção'];
+            
+            // Preparar linhas de dados
+            const rows = filteredData.map(item => [
+                item.instanceType,
+                item.region,
+                formatOsName(item.os),
+                typeof item.savingsOverOnDemand === 'number' ? (item.savingsOverOnDemand).toFixed(1) : 'N/A',
+                item.interruptionLevel
+            ]);
+            
+            // Criar conteúdo CSV
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.join(','))
+            ].join('\n');
+            
+            // Criar blob e link para download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'spot_instances_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+        
+        // Conectar à AWS e analisar instâncias
+        connectAwsBtn.addEventListener('click', async () => {
+            const accessKey = document.getElementById('aws-access-key').value;
+            const secretKey = document.getElementById('aws-secret-key').value;
+            const region = document.getElementById('aws-region').value;
+            
+            if (!accessKey || !secretKey) {
+                alert('Por favor, preencha as credenciais AWS.');
+                return;
+            }
+            
+            try {
+                // Configurar AWS SDK
+                AWS.config.update({
+                    accessKeyId: accessKey,
+                    secretAccessKey: secretKey,
+                    region: region
+                });
+                
+                // Criar serviço EC2
+                const ec2 = new AWS.EC2();
+                
+                // Buscar instâncias EC2
+                const response = await ec2.describeInstances({
+                    Filters: [
+                        {
+                            Name: 'instance-state-name',
+                            Values: ['running']
+                        }
+                    ]
+                }).promise();
+                
+                // Processar instâncias
+                awsInstances = [];
+                let totalCurrentCost = 0;
+                let totalSpotCost = 0;
+                
+                // Preços on-demand de referência para estimativas (USD/hora)
+                const baseOnDemandPrices = {
+                    't2.micro': 0.0116,
+                    't2.small': 0.023,
+                    't2.medium': 0.0464,
+                    't2.large': 0.0928,
+                    'm5.large': 0.096,
+                    'c5.large': 0.085,
+                    // Adicione mais conforme necessário
+                };
+                
+                response.Reservations.forEach(reservation => {
+                    reservation.Instances.forEach(instance => {
+                        // Determinar o sistema operacional (simplificado)
+                        let os = 'linux'; // padrão
+                        if (instance.Platform === 'windows') {
+                            os = 'mswin';
+                        }
+                        
+                        // Buscar a porcentagem de economia do mapeamento de dados da API
+                        const key = `${region}:${instance.InstanceType}:${os}`;
+                        const pricingInfo = spotPriceMap[key] || {
+                            savingsPercentage: 0,
+                            interruptionLevel: 'N/A'
+                        };
+                        
+                        // Determinar elegibilidade para Spot (simplificado)
+                        const isEligible = pricingInfo.interruptionLevel !== 'very high' && 
+                                          pricingInfo.interruptionLevel !== 'N/A' &&
+                                          !instance.Tags.some(tag => 
+                                            tag.Key.toLowerCase() === 'critical' && 
+                                            tag.Value.toLowerCase() === 'true'
+                                          );
+                        
+                        // Estimar preço on-demand (baseado em valores de referência)
+                        let estimatedOnDemandHourlyPrice = 0.10; // valor padrão
+                        
+                        if (baseOnDemandPrices[instance.InstanceType]) {
+                            estimatedOnDemandHourlyPrice = baseOnDemandPrices[instance.InstanceType];
+                        } else {
+                            // Lógica básica de estimativa por família/tamanho quando não temos o valor exato
+                            const family = instance.InstanceType.split('.')[0];
+                            const size = instance.InstanceType.split('.')[1];
+                            
+                            if (family === 'm') estimatedOnDemandHourlyPrice = 0.10;
+                            else if (family === 'c') estimatedOnDemandHourlyPrice = 0.085;
+                            else if (family === 'r') estimatedOnDemandHourlyPrice = 0.12;
+                            else if (family === 't') estimatedOnDemandHourlyPrice = 0.02;
+                            
+                            // Multiplicador por tamanho
+                            if (size === 'small') estimatedOnDemandHourlyPrice *= 1;
+                            else if (size === 'medium') estimatedOnDemandHourlyPrice *= 2;
+                            else if (size === 'large') estimatedOnDemandHourlyPrice *= 4;
+                            else if (size === 'xlarge') estimatedOnDemandHourlyPrice *= 8;
+                            else if (size === '2xlarge') estimatedOnDemandHourlyPrice *= 16;
+                        }
+                        
+                        // Ajustar preço para Windows se necessário
+                        if (os === 'mswin') {
+                            estimatedOnDemandHourlyPrice *= 2; // Windows geralmente custa ~2x mais
+                        }
+                        
+                        // Calcular preço spot com base na % de economia
+                        const savingsPercent = pricingInfo.savingsPercentage || 0;
+                        const estimatedSpotHourlyPrice = estimatedOnDemandHourlyPrice * (1 - (savingsPercent / 100));
+                        
+                        // Calcular custos mensais (assumindo 730 horas por mês)
+                        const monthlyHours = 730;
+                        const onDemandMonthlyCost = estimatedOnDemandHourlyPrice * monthlyHours;
+                        const spotMonthlyCost = estimatedSpotHourlyPrice * monthlyHours;
+                        
+                        // Adicionar à lista de instâncias
+                        awsInstances.push({
+                            id: instance.InstanceId,
+                            type: instance.InstanceType,
+                            region: region,
+                            onDemandCost: onDemandMonthlyCost,
+                            spotCost: spotMonthlyCost,
+                            savings: onDemandMonthlyCost - spotMonthlyCost,
+                            savingsPercentage: savingsPercent,
+                            isEligible: isEligible
+                        });
+                        
+                        // Adicionar aos totais
+                        totalCurrentCost += onDemandMonthlyCost;
+                        if (isEligible) {
+                            totalSpotCost += spotMonthlyCost;
+                        } else {
+                            totalSpotCost += onDemandMonthlyCost;
+                        }
+                    });
+                });
+                
+                // Calcular economia total
+                const totalSavings = totalCurrentCost - totalSpotCost;
+                
+                // Atualizar a interface
+                document.getElementById('current-cost').textContent = `${totalCurrentCost.toFixed(2)}`;
+                document.getElementById('spot-cost').textContent = `${totalSpotCost.toFixed(2)}`;
+                document.getElementById('analysis-savings-amount').textContent = `${totalSavings.toFixed(2)}`;
+                document.getElementById('savings-amount').textContent = `${totalSavings.toFixed(2)}`;
+                
+                // Renderizar tabela de instâncias
+                renderInstancesTable();
+                
+                // Renderizar gráfico de comparação
+                renderSavingsComparisonChart(totalCurrentCost, totalSpotCost);
+                
+                // Exibir resumo na barra lateral
+                awsAnalysisSummary.classList.remove('hide');
+                
+                // Atualizar status de conexão
+                connectionStatus.textContent = 'Conectado';
+                connectionStatus.classList.remove('status-disconnected');
+                connectionStatus.classList.add('status-connected');
+                
+                isAwsConnected = true;
+                
+            } catch (error) {
+                console.error('Erro ao conectar com AWS:', error);
+                alert(`Erro ao conectar com AWS: ${error.message}`);
+            }
+        });
+        
+        // Renderizar tabela de instâncias analisadas
+        function renderInstancesTable() {
+            const tableBody = document.getElementById('instances-table-body');
+            tableBody.innerHTML = '';
+            
+            if (awsInstances.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 7;
+                cell.textContent = 'Nenhuma instância encontrada.';
+                cell.style.textAlign = 'center';
+                cell.style.padding = '20px';
+                row.appendChild(cell);
+                tableBody.appendChild(row);
+                return;
+            }
+            
+            awsInstances.forEach(instance => {
+                const row = document.createElement('tr');
+                
+                const idCell = document.createElement('td');
+                idCell.textContent = instance.id;
+                row.appendChild(idCell);
+                
+                const typeCell = document.createElement('td');
+                typeCell.textContent = instance.type;
+                row.appendChild(typeCell);
+                
+                const regionCell = document.createElement('td');
+                regionCell.textContent = instance.region;
+                row.appendChild(regionCell);
+                
+                const onDemandCell = document.createElement('td');
+                onDemandCell.textContent = `${instance.onDemandCost.toFixed(2)}`;
+                row.appendChild(onDemandCell);
+                
+                const spotCell = document.createElement('td');
+                spotCell.textContent = `${instance.isEligible ? instance.spotCost.toFixed(2) : 'N/A'}`;
+                row.appendChild(spotCell);
+                
+                const savingsCell = document.createElement('td');
+                if (instance.isEligible) {
+                    savingsCell.textContent = `${instance.savings.toFixed(2)} (${instance.savingsPercentage.toFixed(0)}%)`;
+                    savingsCell.style.color = '#28a745';
+                } else {
+                    savingsCell.textContent = 'N/A';
+                }
+                row.appendChild(savingsCell);
+                
+                const eligibleCell = document.createElement('td');
+                const badge = document.createElement('span');
+                badge.textContent = instance.isEligible ? 'Sim' : 'Não';
+                badge.className = `status-badge ${instance.isEligible ? 'status-low' : 'status-high'}`;
+                eligibleCell.appendChild(badge);
+                row.appendChild(eligibleCell);
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Salvar credenciais localmente
+        saveCredentialsBtn.addEventListener('click', () => {
+            const accessKey = document.getElementById('aws-access-key').value;
+            const secretKey = document.getElementById('aws-secret-key').value;
+            const region = document.getElementById('aws-region').value;
+            
+            if (!accessKey || !secretKey) {
+                alert('Por favor, preencha as credenciais AWS.');
+                return;
+            }
+            
+            // Salvar no localStorage
+            localStorage.setItem('aws_access_key', accessKey);
+            localStorage.setItem('aws_secret_key', secretKey);
+            localStorage.setItem('aws_region', region);
+            
+            // Exibir mensagem de sucesso
+            credentialsStatus.classList.remove('hide');
+            
+            // Ocultar a mensagem após 3 segundos
+            setTimeout(() => {
+                credentialsStatus.classList.add('hide');
+            }, 3000);
+        });
+        
+        // Carregar credenciais salvas
+        function loadSavedCredentials() {
+            const accessKey = localStorage.getItem('aws_access_key');
+            const secretKey = localStorage.getItem('aws_secret_key');
+            const region = localStorage.getItem('aws_region');
+            
+            if (accessKey) {
+                document.getElementById('aws-access-key').value = accessKey;
+            }
+            
+            if (secretKey) {
+                document.getElementById('aws-secret-key').value = secretKey;
+            }
+            
+            if (region) {
+                document.getElementById('aws-region').value = region;
+            }
+        }
+        
+        // Eventos para exibição do painel de análise completa
+        viewFullAnalysisBtn.addEventListener('click', () => {
+            awsAnalysisResults.classList.remove('hide');
+        });
+        
+        closeAnalysisBtn.addEventListener('click', () => {
+            awsAnalysisResults.classList.add('hide');
+        });
+        
+        // Toggle da sidebar
+        const sidebarCloseBtn = document.getElementById('sidebar-close');
+        const mainContent = document.querySelector('.main-content');
+        const menuToggle = document.getElementById('menu-toggle');
+        
+        // Abrir sidebar
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.add('active');
+            mainContent.classList.add('sidebar-open');
+        });
+        
+        // Fechar sidebar
+        sidebarCloseBtn.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+            mainContent.classList.remove('sidebar-open');
+        });
+        
+        // Inicializar a página
+        loadData();
+    </script>
+</body>
+</html>

@@ -1,60 +1,48 @@
 // Preços de exemplo - em um aplicativo real, você iria buscar esses dados da API da AWS
 // ou de um backend que consulta os preços atuais
-const PRICES = {
-    "us-east-1": {
-        "t3.micro": { onDemand: 0.0104, spot: 0.0031 },
-        "t3.small": { onDemand: 0.0208, spot: 0.0062 },
-        "t3.medium": { onDemand: 0.0416, spot: 0.0125 },
-        "m5.large": { onDemand: 0.096, spot: 0.0378 },
-        "m5.xlarge": { onDemand: 0.192, spot: 0.0789 },
-        "m5.2xlarge": { onDemand: 0.384, spot: 0.1565 },
-        "c5.large": { onDemand: 0.085, spot: 0.0316 },
-        "c5.xlarge": { onDemand: 0.17, spot: 0.0688 },
-        "r5.large": { onDemand: 0.126, spot: 0.0427 },
-        "r5.xlarge": { onDemand: 0.252, spot: 0.0854 }
-    },
-    "us-east-2": {
-        "t3.micro": { onDemand: 0.0104, spot: 0.0031 },
-        "t3.small": { onDemand: 0.0208, spot: 0.0062 },
-        "t3.medium": { onDemand: 0.0416, spot: 0.0125 },
-        "m5.large": { onDemand: 0.096, spot: 0.0336 },
-        "m5.xlarge": { onDemand: 0.192, spot: 0.0672 },
-        "m5.2xlarge": { onDemand: 0.384, spot: 0.1344 },
-        "c5.large": { onDemand: 0.085, spot: 0.0298 },
-        "c5.xlarge": { onDemand: 0.17, spot: 0.0595 },
-        "r5.large": { onDemand: 0.126, spot: 0.0441 },
-        "r5.xlarge": { onDemand: 0.252, spot: 0.0882 }
-    },
-    "sa-east-1": {
-        "t3.micro": { onDemand: 0.0132, spot: 0.0040 },
-        "t3.small": { onDemand: 0.0264, spot: 0.0079 },
-        "t3.medium": { onDemand: 0.0528, spot: 0.0158 },
-        "m5.large": { onDemand: 0.122, spot: 0.0427 },
-        "m5.xlarge": { onDemand: 0.244, spot: 0.0854 },
-        "m5.2xlarge": { onDemand: 0.488, spot: 0.1708 },
-        "c5.large": { onDemand: 0.108, spot: 0.0378 },
-        "c5.xlarge": { onDemand: 0.216, spot: 0.0756 },
-        "r5.large": { onDemand: 0.16, spot: 0.056 },
-        "r5.xlarge": { onDemand: 0.32, spot: 0.112 }
-    }
-};
+let PRICES = {};
+let INTERRUPTION_RATES = {};
 
-// Dados de interrupção de exemplo - você precisará coletar esses dados manualmente
-// do Spot Instance Advisor e inserir aqui ou implementar um web scraper
-const INTERRUPTION_RATES = {
-    "us-east-1": {
-        "t3.micro": { rate: "<5%", level: "low" },
-        "t3.small": { rate: "<5%", level: "low" },
-        "t3.medium": { rate: "<5%", level: "low" },
-        "m5.large": { rate: "5-10%", level: "medium" },
-        "m5.xlarge": { rate: "5-10%", level: "medium" },
-        "m5.2xlarge": { rate: "10-15%", level: "high" },
-        "c5.large": { rate: "<5%", level: "low" },
-        "c5.xlarge": { rate: "<5%", level: "low" },
-        "r5.large": { rate: "5-10%", level: "medium" },
-        "r5.xlarge": { rate: "5-10%", level: "medium" }
+// Função para buscar os dados da API do Spot Advisor
+async function fetchSpotData() {
+    try {
+        const response = await fetch('http://localhost:3000/api/spot-prices');
+        const data = await response.json();
+
+        // Estruturar os dados para PRICES e INTERRUPTION_RATES
+        data.forEach(instance => {
+            if (!PRICES[instance.region]) {
+                PRICES[instance.region] = {};
+                INTERRUPTION_RATES[instance.region] = {};
+            }
+
+            PRICES[instance.region][instance.instanceType] = {
+                onDemand: "N/A",  // Se precisar dos preços On-Demand, pode adicionar uma fonte aqui
+                spot: instance.savingsOverOnDemand // Já está como porcentagem de economia
+            };
+
+            INTERRUPTION_RATES[instance.region][instance.instanceType] = {
+                rate: `${instance.interruptionRate * 10}%`, // Agora corretamente ajustado para a API
+                level: instance.interruptionLevel
+            };
+        });
+
+        console.log("📌 Dados carregados da API:", PRICES, INTERRUPTION_RATES);
+
+        // Atualiza a interface com os novos dados
+        updateInstancesTable();
+        updateInterruptionTable();
+        updateSummary();
+        updateChart();
+
+    } catch (error) {
+        console.error("Erro ao buscar os dados do Spot Advisor:", error);
     }
-};
+}
+
+// Função para carregar os dados ao iniciar
+document.addEventListener('DOMContentLoaded', fetchSpotData);
+
 
 // Variáveis para armazenar o estado atual
 let selectedInstances = [];
@@ -194,11 +182,20 @@ function updateSummary() {
 // Função para atualizar o gráfico
 function updateChart() {
     const ctx = document.getElementById('savings-chart').getContext('2d');
-    const hoursPerMonth = parseInt(document.getElementById('hours-per-month').value);
-    
+    const hoursPerMonth = parseInt(document.getElementById('hours-per-month').value) || 0;
+
+    if (!selectedInstances || selectedInstances.length === 0) {
+        console.warn("⚠️ Nenhuma instância selecionada para o gráfico.");
+        return;
+    }
+
     const labels = selectedInstances.map(instance => `${instance.type} (${instance.region})`);
-    const onDemandData = selectedInstances.map(instance => instance.prices.onDemand * hoursPerMonth);
-    const spotData = selectedInstances.map(instance => instance.prices.spot * hoursPerMonth);
+    const onDemandData = selectedInstances.map(instance => 
+        instance.prices && instance.prices.onDemand ? instance.prices.onDemand * hoursPerMonth : 0
+    );
+    const spotData = selectedInstances.map(instance => 
+        instance.prices && instance.prices.spot ? instance.prices.spot * hoursPerMonth : 0
+    );
     const savingsData = selectedInstances.map((instance, index) => 
         onDemandData[index] - spotData[index]
     );
