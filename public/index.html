@@ -7,9 +7,29 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1009.0/aws-sdk.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Header -->
+    <header>
+        <div class="header-content">
+            <div class="header-left">
+                <button class="menu-toggle" id="menu-toggle">☰</button>
+                <div>
+                    <h1 class="header-title">Dashboard de Instâncias <span class="orange-accent">Spot</span> AWS</h1>
+                    <div class="header-subtitle">Análise de preços e economia com instâncias spot</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="theme-toggle" id="theme-toggle" title="Alternar tema claro/escuro">
+                    <span class="sun-icon">☀️</span>
+                    <span class="moon-icon">🌙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+    
     <!-- Sidebar para conexão AWS -->
     <aside class="sidebar">
         <button class="sidebar-close" id="sidebar-close">&times;</button>
@@ -58,10 +78,11 @@
                         <option value="sa-east-1">South America (São Paulo)</option>
                     </select>
                 </div>
+                
+                <button id="connect-aws-btn" class="aws-btn">Analisar Instâncias</button>
+                <button id="save-credentials-btn" class="aws-btn">Salvar Credenciais (Local)</button>
             </form>
             
-            <button id="connect-aws-btn" class="aws-btn">Analisar Instâncias</button>
-            <button id="save-credentials-btn" class="aws-btn">Salvar Credenciais (Local)</button>
             <div id="credentials-status" class="success-message hide">Credenciais salvas localmente com sucesso!</div>
             
             <div class="aws-info">
@@ -89,16 +110,6 @@
     
     <!-- Conteúdo principal -->
     <div class="main-content">
-        <header>
-            <div class="header-content">
-                <div class="header-left">
-                    <button class="menu-toggle" id="menu-toggle">☰</button>
-                    <h1>Dashboard de Instâncias <span class="orange-accent">Spot</span> AWS</h1>
-                </div>
-                <div class="header-subtitle">Análise de preços e economia com instâncias spot</div>
-            </div>
-        </header>
-        
         <div class="container">
             <!-- Painel de resultados da análise completa da conta AWS -->
             <div id="aws-analysis-results" class="dashboard-card hide">
@@ -217,7 +228,7 @@
                 </div>
             </div>
             
-            <button id="export-csv" class="export-btn">Exportar para CSV</button>
+            <button id="export-csv" class="export-btn">Exportar CSV</button>
             
             <div class="dashboard-grid">
                 <div class="dashboard-card">

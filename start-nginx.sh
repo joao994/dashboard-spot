@@ -13,6 +13,28 @@ ls -la /app
 ls -la /app/api
 ls -la /usr/share/nginx/html
 
+# Verificar arquivos de CSS e JS específicos
+echo "Verificando arquivos CSS e JS..."
+if [ -f /usr/share/nginx/html/styles.css ]; then
+    echo "OK: styles.css encontrado!"
+else
+    echo "ERRO: styles.css não encontrado!"
+    # Tentar copiar de outro local como fallback
+    cp -f /app/public/styles.css /usr/share/nginx/html/ || echo "Falha ao copiar styles.css"
+fi
+
+if [ -f /usr/share/nginx/html/script.js ]; then
+    echo "OK: script.js encontrado!"
+else
+    echo "ERRO: script.js não encontrado!"
+    # Tentar copiar de outro local como fallback
+    cp -f /app/public/script.js /usr/share/nginx/html/ || echo "Falha ao copiar script.js"
+fi
+
+# Aplicar permissões adequadas
+echo "Aplicando permissões para arquivos estáticos..."
+chmod -R 755 /usr/share/nginx/html/
+
 # Iniciar o servidor Node.js em segundo plano
 echo "Iniciando servidor Node.js na porta 3000..."
 cd /app && node api/server.js &

@@ -22,11 +22,22 @@ FROM nginx:stable-alpine
 # Instalar dependências necessárias
 RUN apk add --no-cache nodejs npm curl bash
 
+# Remover conteúdo padrão do Nginx
+RUN rm -rf /usr/share/nginx/html/*
+
 # Copiar a configuração do Nginx
 COPY ./nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copiar os arquivos estáticos do frontend
-COPY ./public /usr/share/nginx/html
+COPY ./public/* /usr/share/nginx/html/
+
+# Verificar se os arquivos essenciais foram copiados
+RUN ls -la /usr/share/nginx/html/ && \
+    if [ ! -f /usr/share/nginx/html/styles.css ]; then echo "ERRO: styles.css não encontrado!"; exit 1; fi && \
+    if [ ! -f /usr/share/nginx/html/script.js ]; then echo "ERRO: script.js não encontrado!"; exit 1; fi
+
+# Definir permissões
+RUN chmod -R 755 /usr/share/nginx/html
 
 # Criar diretório para a aplicação Node.js
 WORKDIR /app

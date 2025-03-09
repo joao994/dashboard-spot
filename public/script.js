@@ -29,6 +29,33 @@ let sidebar;
 let mainContent;
 let menuToggle;
 let sidebarCloseBtn;
+let themeToggle;
+
+// Função para gerenciar o tema (claro/escuro)
+function initThemeManager() {
+    // Verifica se o usuário já tem uma preferência salva
+    const savedTheme = localStorage.getItem('theme');
+    
+    // Se o tema estiver salvo, usa essa preferência
+    if (savedTheme) {
+        document.documentElement.classList.toggle('light-theme', savedTheme === 'light');
+    } 
+    // Caso contrário, define o tema claro como padrão
+    else {
+        document.documentElement.classList.add('light-theme');
+        localStorage.setItem('theme', 'light');
+    }
+    
+    // Adiciona evento de clique ao botão de tema
+    themeToggle.addEventListener('click', () => {
+        // Toggle da classe light-theme no elemento root
+        document.documentElement.classList.toggle('light-theme');
+        
+        // Salva a preferência em localStorage
+        const currentTheme = document.documentElement.classList.contains('light-theme') ? 'light' : 'dark';
+        localStorage.setItem('theme', currentTheme);
+    });
+}
 
 // Inicialização quando o documento estiver pronto
 document.addEventListener('DOMContentLoaded', () => {
@@ -50,10 +77,14 @@ document.addEventListener('DOMContentLoaded', () => {
     viewFullAnalysisBtn = document.getElementById('view-full-analysis');
     closeAnalysisBtn = document.getElementById('close-analysis');
     connectionStatus = document.getElementById('connection-status');
-    sidebarCloseBtn = document.getElementById('sidebar-close');
+    sidebar = document.querySelector('.sidebar');
     mainContent = document.querySelector('.main-content');
     menuToggle = document.getElementById('menu-toggle');
-    sidebar = document.querySelector('.sidebar');
+    sidebarCloseBtn = document.getElementById('sidebar-close');
+    themeToggle = document.getElementById('theme-toggle');
+
+    // Inicializar gerenciador de tema
+    initThemeManager();
 
     // Configurar listeners de eventos
     setupEventListeners();
