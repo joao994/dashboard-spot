@@ -8,6 +8,9 @@ const app = express();
 app.use(cors());
 const PORT = 3000;
 
+// Configurar o Express para servir arquivos estáticos da pasta public
+app.use(express.static(path.join(__dirname, '../public')));
+
 // Cache configuration
 const CACHE_FILE = path.join(__dirname, 'spot-advisor-cache.json');
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos em milissegundos
@@ -134,7 +137,17 @@ app.post('/api/clear-cache', (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Servidor rodando em http://localhost:${PORT}`);
+// Rota para a página inicial
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Rota para qualquer outra requisição que não seja encontrada
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando em http://0.0.0.0:${PORT}`);
     console.log(`Cache local: ${CACHE_FILE}`);
 });

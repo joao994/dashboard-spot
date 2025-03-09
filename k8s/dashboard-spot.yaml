@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-spot
+  labels:
+    app: dashboard-spot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard-spot
+  template:
+    metadata:
+      labels:
+        app: dashboard-spot
+    spec:
+      containers:
+      - name: dashboard-spot
+        image: joao994/dashboard-spot:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /api/spot-prices
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/spot-prices
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        volumeMounts:
+        - name: cache-volume
+          mountPath: /app/api/cache
+        envFrom:
+        - configMapRef:
+            name: dashboard-spot-config
+      volumes:
+      - name: cache-volume
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-spot
+  labels:
+    app: dashboard-spot
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: dashboard-spot
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-spot-config
+data:
+  NODE_ENV: "production"
+  CACHE_DURATION: "1800000"  # 30 minutos em milissegundos
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dashboard-spot
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dashboard-spot
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-spot-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: dashboard-spot.local  # Altere para seu domínio
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard-spot
+            port:
+              number: 80 

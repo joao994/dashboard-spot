@@ -1,24 +1,23 @@
-version: '3.8'
+version: '3'
 
 services:
-  api:
-    build: .
-    container_name: aws-spot-api
+  dashboard-spot:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-      - NODE_ENV=production
-      # Credenciais para a API (opcional - você pode usar variáveis de ambiente ou um .env)
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION}
+      - "80:80"
     volumes:
-      # Mapear apenas para desenvolvimento (comentar em produção)
-      #- ./:/app
-      # Excluir node_modules do volume para usar a versão dentro do container
-      - /app/node_modules
+      - ./api/cache:/app/api/cache
     restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/spot-prices"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # Opcionalmente, você pode adicionar um servidor web para servir os arquivos estáticos
   nginx:

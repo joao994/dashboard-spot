@@ -139,7 +139,7 @@ function closeSidebar() {
 // Função para carregar os dados da API
 async function loadData() {
     try {
-        const response = await fetch('http://localhost:3000/api/spot-prices');
+        const response = await fetch('/api/spot-prices');
         spotData = await response.json();
         
         // Criar mapeamento de preços spot para referência rápida
