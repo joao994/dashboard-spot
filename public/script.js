@@ -30,6 +30,10 @@ let mainContent;
 let menuToggle;
 let sidebarCloseBtn;
 let themeToggle;
+let updateSpotPriceBtn;
+
+// Cache local para preços spot para evitar chamadas duplicadas à API
+const spotPriceCache = {};
 
 // Função para gerenciar o tema (claro/escuro)
 function initThemeManager() {
@@ -82,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     menuToggle = document.getElementById('menu-toggle');
     sidebarCloseBtn = document.getElementById('sidebar-close');
     themeToggle = document.getElementById('theme-toggle');
+    updateSpotPriceBtn = document.getElementById('update-spot-price-btn');
 
     // Inicializar gerenciador de tema
     initThemeManager();
@@ -152,6 +157,14 @@ function setupEventListeners() {
     // Impedir que cliques dentro do sidebar propaguem para o document
     document.querySelector('.sidebar').addEventListener('click', function(e) {
         e.stopPropagation();
+    });
+
+    updateSpotPriceBtn.addEventListener('click', updateSpotPrices);
+
+    // Limpar cache quando a região mudar
+    regionFilter.addEventListener('change', () => {
+        clearSpotPriceCache();
+        applyFilters();
     });
 }
 
@@ -345,7 +358,7 @@ function renderTable() {
     if (pageData.length === 0) {
         const row = document.createElement('tr');
         const cell = document.createElement('td');
-        cell.colSpan = 5;
+        cell.colSpan = 6;
         cell.textContent = 'Nenhum dado encontrado para os filtros selecionados.';
         cell.style.textAlign = 'center';
         cell.style.padding = '20px';
@@ -377,6 +390,19 @@ function renderTable() {
             ? `${(item.savingsOverOnDemand).toFixed(0)}%` 
             : 'N/A';
         row.appendChild(savingsCell);
+        
+        const spotPriceCell = document.createElement('td');
+        if (item.isLoading) {
+            spotPriceCell.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Carregando...</div>';
+        } else if (item.spotPrice) {
+            const priceSpan = document.createElement('span');
+            priceSpan.textContent = `$${item.spotPrice.toFixed(4)}`;
+            priceSpan.className = 'spot-price-value';
+            spotPriceCell.appendChild(priceSpan);
+        } else {
+            spotPriceCell.textContent = 'N/A';
+        }
+        row.appendChild(spotPriceCell);
         
         const interruptionCell = document.createElement('td');
         const badge = document.createElement('span');
@@ -1193,24 +1219,75 @@ function getRegionFullName(regionCode) {
 }
 
 // Função para obter o preço spot estimado
-function getSpotPrice(instanceType, region, os, savingsPercentage) {
-    // A AWS Pricing API não fornece preços spot diretamente, então usamos a porcentagem de economia
-    if (typeof savingsPercentage === 'number') {
-        // Obter preço on-demand para esse tipo
-        return new Promise(async (resolve) => {
+async function getSpotPrice(instanceType, region, os, savingsPercentage) {
+    try {
+        // Verificar se já temos o preço em cache
+        const cacheKey = `${instanceType}|${region}|${os}`;
+        if (spotPriceCache[cacheKey]) {
+            return spotPriceCache[cacheKey];
+        }
+        
+        // Normalizar o sistema operacional
+        let normalizedOs = '';
+        if (os) {
+            // Converter para minúsculas para facilitar a comparação
+            const osLower = os.toLowerCase();
+            if (osLower.includes('windows') || osLower.includes('win')) {
+                normalizedOs = 'mswin';
+            } else {
+                normalizedOs = 'linux'; // Linux, RHEL, SUSE, etc. são tratados como 'linux' no spot.json
+            }
+        } else {
+            normalizedOs = 'linux'; // Padrão para Linux
+        }
+        
+        // Tentar obter o preço do novo endpoint que usa spot.json
+        const response = await fetch(`/api/spot-price?instanceType=${instanceType}&region=${region}&os=${normalizedOs}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.price && data.price !== "Preço não disponível") {
+                console.log(`Preço spot para ${instanceType} (${normalizedOs}) obtido do spot.json: $${data.price}`);
+                const price = parseFloat(data.price);
+                // Armazenar em cache
+                spotPriceCache[cacheKey] = price;
+                return price;
+            }
+        }
+        
+        console.log(`Preço não encontrado no spot.json para ${instanceType}, usando método de cálculo alternativo...`);
+        
+        // Fallback para o método anterior se não encontrar no spot.json
+        // ou se houver qualquer erro na busca
+        if (typeof savingsPercentage === 'number') {
+            // Obter preço on-demand para esse tipo
+            const onDemandPrice = await getOnDemandPrice(instanceType, region, os);
+            // Calcular o preço spot aplicando o desconto
+            const spotPrice = onDemandPrice * (1 - (savingsPercentage / 100));
+            console.log(`Preço spot calculado para ${instanceType}: on-demand=$${onDemandPrice}, desconto=${savingsPercentage}%, spot=$${spotPrice}`);
+            // Armazenar em cache
+            spotPriceCache[cacheKey] = spotPrice;
+            return spotPrice;
+        }
+        
+        return 0;
+    } catch (error) {
+        console.error('Erro ao obter preço spot:', error);
+        
+        // Fallback para o método anterior em caso de erro
+        if (typeof savingsPercentage === 'number') {
             try {
                 const onDemandPrice = await getOnDemandPrice(instanceType, region, os);
-                // Calcular o preço spot aplicando o desconto
                 const spotPrice = onDemandPrice * (1 - (savingsPercentage / 100));
-                console.log(`Preço spot para ${instanceType}: on-demand=$${onDemandPrice}, desconto=${savingsPercentage}%, spot=$${spotPrice}`);
-                resolve(spotPrice);
-            } catch (error) {
-                console.error('Erro ao calcular preço spot:', error);
-                resolve(0);
+                return spotPrice;
+            } catch (innerError) {
+                console.error('Erro no fallback para obter preço spot:', innerError);
+                return 0;
             }
-        });
+        }
+        
+        return 0;
     }
-    return Promise.resolve(0);
 }
 
 async function connectToAws() {
@@ -1606,4 +1683,140 @@ function renderArchitectureComparisonChart() {
             }
         }
     });
+}
+
+// Função para atualizar os preços spot
+async function updateSpotPrices() {
+    try {
+        // Desabilitar botão e mostrar mensagem de carregamento
+        updateSpotPriceBtn.disabled = true;
+        updateSpotPriceBtn.textContent = 'Atualizando...';
+        
+        // Obter região selecionada no filtro
+        const selectedRegion = regionFilter.value;
+        const regionToUpdate = selectedRegion === 'all' ? null : selectedRegion;
+        
+        // Adicionar indicador de carregamento apenas nas células de preço spot da região selecionada na tabela atual
+        const spotPriceCells = document.querySelectorAll('#table-body tr td:nth-child(5)');
+        const tableRows = document.querySelectorAll('#table-body tr');
+        
+        // Atualizar apenas as células da região selecionada ou todas se 'all' estiver selecionado
+        tableRows.forEach((row, index) => {
+            const regionCell = row.querySelector('td:nth-child(2)');
+            const spotPriceCell = row.querySelector('td:nth-child(5)');
+            
+            if (!regionToUpdate || (regionCell && regionCell.textContent === regionToUpdate)) {
+                if (spotPriceCell) {
+                    spotPriceCell.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Carregando...</div>';
+                }
+            }
+        });
+        
+        // Primeiro, disparamos a requisição para baixar os dados mais recentes
+        console.log(`Solicitando download dos dados de preço spot mais recentes${regionToUpdate ? ' para região ' + regionToUpdate : ''}...`);
+        
+        try {
+            const downloadResponse = await fetch('/api/update-spot-prices', { 
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
+                }
+            });
+            
+            if (!downloadResponse.ok) {
+                throw new Error(`Falha ao solicitar download: ${downloadResponse.status}`);
+            }
+            
+            const downloadResult = await downloadResponse.json();
+            console.log("Download concluído:", downloadResult);
+            
+            // Atualizar células na tabela com uma mensagem temporária de processamento
+            tableRows.forEach((row, index) => {
+                const regionCell = row.querySelector('td:nth-child(2)');
+                const spotPriceCell = row.querySelector('td:nth-child(5)');
+                
+                if (!regionToUpdate || (regionCell && regionCell.textContent === regionToUpdate)) {
+                    if (spotPriceCell) {
+                        spotPriceCell.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Processando...</div>';
+                    }
+                }
+            });
+        } catch (downloadError) {
+            console.error("Erro ao baixar spot.json:", downloadError);
+            // Continuar com os preços existentes, se houver um erro no download
+        }
+        
+        // Filtrar spotData para processar apenas itens da região selecionada
+        const itemsToUpdate = regionToUpdate 
+            ? spotData.filter(item => item.region === regionToUpdate)
+            : spotData;
+        
+        console.log(`Atualizando preços para ${itemsToUpdate.length} instâncias ${regionToUpdate ? 'da região ' + regionToUpdate : 'de todas as regiões'}`);
+        
+        // Processar os dados por páginas para melhor desempenho
+        const batchSize = 50; // Processar 50 instâncias por vez
+        
+        for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
+            const batch = itemsToUpdate.slice(i, i + batchSize);
+            const batchResults = await Promise.all(batch.map(async (item) => {
+                try {
+                    const spotPrice = await getSpotPrice(
+                        item.instanceType, 
+                        item.region, 
+                        item.os, 
+                        item.savingsOverOnDemand
+                    );
+                    return { ...item, spotPrice };
+                } catch (error) {
+                    console.error(`Erro ao obter preço para ${item.instanceType}:`, error);
+                    return item; // Manter o item original em caso de erro
+                }
+            }));
+            
+            // Atualizar os dados com o lote processado
+            for (let j = 0; j < batchResults.length; j++) {
+                const updatedItem = batchResults[j];
+                // Encontrar o índice no spotData original
+                const originalIndex = spotData.findIndex(item => 
+                    item.instanceType === updatedItem.instanceType && 
+                    item.region === updatedItem.region && 
+                    item.os === updatedItem.os
+                );
+                
+                if (originalIndex !== -1) {
+                    spotData[originalIndex] = updatedItem;
+                }
+            }
+            
+            // Atualizar UI a cada lote para mostrar progresso
+            console.log(`Processados ${Math.min(i + batchSize, itemsToUpdate.length)} de ${itemsToUpdate.length} itens`);
+            
+            // Se estivermos processando muitos itens, atualizar a UI a cada lote
+            if (itemsToUpdate.length > 20) {
+                applyFilters(); // Recarregar a tabela com os dados atualizados até agora
+            }
+        }
+        
+        // Reaplicar filtros após atualizar todos os dados
+        applyFilters();
+        
+        // Remover mensagem de alerta para não interromper o usuário
+        console.log(regionToUpdate 
+            ? `Preços spot da região ${getRegionFullName(regionToUpdate)} atualizados com sucesso!` 
+            : 'Preços spot de todas as regiões atualizados com sucesso!');
+            
+    } catch (error) {
+        console.error('Erro ao atualizar preços spot:', error);
+        alert(`Erro ao atualizar preços spot: ${error.message}`);
+    } finally {
+        updateSpotPriceBtn.disabled = false;
+        updateSpotPriceBtn.textContent = 'Atualizar Preço Spot da Região Selecionada';
+    }
+}
+
+// Limpar cache de preços spot para garantir dados atualizados
+function clearSpotPriceCache() {
+    Object.keys(spotPriceCache).forEach(key => delete spotPriceCache[key]);
+    console.log("Cache de preços spot limpo");
 } 
