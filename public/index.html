@@ -269,17 +269,38 @@
             </div>
             
             <div class="dashboard-card">
-                <h2>Dados Detalhados</h2>
+                <div class="section-header">
+                    <h2>Dados Detalhados</h2>
+                    <button id="update-spot-price-btn" class="btn">Atualizar Preço Spot</button>
+                </div>
                 <div id="table-container">
                     <table id="spot-data-table">
                         <thead>
                             <tr>
-                                <th>Tipo de Instância</th>
-                                <th>Região</th>
-                                <th>Sistema Operacional</th>
-                                <th>Economia (%)</th>
-                                <th>Preço do Spot</th>
-                                <th>Nível de Interrupção</th>
+                                <th class="sortable" data-sort="instanceType">
+                                    Tipo de Instância
+                                    <span class="sort-icon">▾</span>
+                                </th>
+                                <th class="sortable" data-sort="region">
+                                    Região
+                                    <span class="sort-icon">▾</span>
+                                </th>
+                                <th class="sortable" data-sort="os">
+                                    Sistema Operacional
+                                    <span class="sort-icon">▾</span>
+                                </th>
+                                <th class="sortable" data-sort="savings">
+                                    Economia (%)
+                                    <span class="sort-icon">▾</span>
+                                </th>
+                                <th class="sortable" data-sort="spotPrice">
+                                    Preço do Spot
+                                    <span class="sort-icon">▾</span>
+                                </th>
+                                <th class="sortable" data-sort="interruption">
+                                    Nível de Interrupção
+                                    <span class="sort-icon">▾</span>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="table-body">
@@ -288,9 +309,6 @@
                     </table>
                     <div class="pagination" id="pagination">
                         <!-- Botões de paginação serão inseridos aqui -->
-                    </div>
-                    <div class="action-buttons">
-                        <button id="update-spot-price-btn" class="btn">Atualizar Preço Spot</button>
                     </div>
                 </div>
             </div>

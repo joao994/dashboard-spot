@@ -170,6 +170,96 @@ function readSpotJson() {
     }
 }
 
+// Variável global para armazenar os dados spot em memória
+let spotDataCache = null;
+
+// Função para carregar os dados spot em memória
+function loadSpotDataCache() {
+    try {
+        console.log("Carregando dados spot em cache...");
+        spotDataCache = readSpotJson();
+        if (spotDataCache) {
+            console.log("Dados spot carregados com sucesso em cache!");
+        } else {
+            console.log("Dados spot não encontrados. Tentando buscar da fonte...");
+            fetchAndSaveSpotJson().then(() => {
+                spotDataCache = readSpotJson();
+                console.log("Dados spot atualizados e carregados em cache!");
+            }).catch(err => {
+                console.error("Erro ao buscar dados spot:", err);
+            });
+        }
+    } catch (error) {
+        console.error("Erro ao carregar dados spot em cache:", error);
+    }
+}
+
+// Carregar os dados em cache ao iniciar o servidor
+loadSpotDataCache();
+
+// Agendar atualização periódica dos dados (a cada 6 horas)
+setInterval(() => {
+    console.log("Atualizando dados spot em cache...");
+    fetchAndSaveSpotJson().then(() => {
+        spotDataCache = readSpotJson();
+        console.log("Dados spot atualizados em cache!");
+    }).catch(err => {
+        console.error("Erro ao atualizar dados spot:", err);
+    });
+}, 6 * 60 * 60 * 1000); // 6 horas em milissegundos
+
+// Função para encontrar o preço spot de uma instância específica
+function findSpotPrice(spotData, region, instanceType, osValue) {
+    if (!spotData?.config?.regions) {
+        return { price: null, details: null };
+    }
+    
+    // Encontrar a região
+    const regionData = spotData.config.regions.find(r => r.region === region);
+    if (!regionData) {
+        return { price: null, details: null };
+    }
+    
+    // Procurar nos tipos de instância
+    for (const instanceTypeGroup of regionData.instanceTypes) {
+        if (!instanceTypeGroup.sizes) continue;
+        
+        // Procurar pelo tamanho específico da instância
+        const sizeData = instanceTypeGroup.sizes.find(s => s.size === instanceType);
+        if (!sizeData) continue;
+        
+        if (!sizeData.valueColumns) {
+            continue;
+        }
+        
+        // Procurar pelo sistema operacional específico
+        const osData = sizeData.valueColumns.find(vc => vc.name === osValue);
+        if (!osData?.prices?.USD) {
+            continue;
+        }
+        
+        if (osData.prices.USD === 'N/A*') {
+            continue;
+        }
+        
+        const price = osData.prices.USD;
+        
+        return {
+            price,
+            details: {
+                instanceType,
+                instanceTypeGroup: instanceTypeGroup.type,
+                region,
+                os: osValue,
+                price
+            }
+        };
+    }
+    
+    // Se chegou aqui, não encontrou o preço
+    return { price: null, details: null };
+}
+
 app.get('/api/spot-prices', async (req, res) => {
     try {
         const data = await getSpotData();
@@ -228,21 +318,19 @@ app.get('/api/spot-price', (req, res) => {
             });
         }
         
-        console.log(`Solicitando preço spot para: instanceType=${instanceType}, region=${region}, os=${os || 'linux'}`);
-        
-        const spotData = readSpotJson();
-        if (!spotData) {
-            return res.status(404).json({ 
-                success: false, 
-                error: "Dados não encontrados", 
-                message: "Arquivo spot.json não encontrado ou inválido" 
-            });
+        // Verificar se os dados estão em cache
+        if (!spotDataCache) {
+            spotDataCache = readSpotJson();
+            if (!spotDataCache) {
+                return res.status(404).json({ 
+                    success: false, 
+                    error: "Dados não encontrados", 
+                    message: "Arquivo spot.json não encontrado ou inválido" 
+                });
+            }
         }
         
-        // Extrair informações sobre o tipo de instância
-        // O formato é geralmente "m5.xlarge", "t3.micro", etc.
-        const instanceFamily = instanceType.split('.')[0]; // ex: m5, t3
-        const instanceSize = instanceType.split('.')[1];   // ex: xlarge, micro
+        const [instanceFamily, instanceSize] = instanceType.split('.');
         
         // Mapeamento de sistemas operacionais para os valores aceitos no spot.json
         const osMapping = {
@@ -257,70 +345,16 @@ app.get('/api/spot-price', (req, res) => {
         // Determinar qual valor de SO usar
         const osValue = osMapping[os?.toLowerCase()] || 'linux';
         
-        // Navegar pela estrutura do arquivo spot.json
-        let price = null;
-        let priceDetails = null;
-        
-        console.log(`Buscando preço para família=${instanceFamily}, tamanho=${instanceSize}, so=${osValue}`);
-        
-        if (spotData && spotData.config && spotData.config.regions) {
-            // Encontrar a região
-            const regionData = spotData.config.regions.find(r => r.region === region);
-            
-            if (regionData) {
-                console.log(`Região ${region} encontrada`);
-                
-                // Procurar nos tipos de instância (generalCurrentGen, computeCurrentGen, etc.)
-                for (const instanceTypeGroup of regionData.instanceTypes) {
-                    if (instanceTypeGroup.sizes) {
-                        // Procurar pelo tamanho específico da instância
-                        const sizeData = instanceTypeGroup.sizes.find(s => s.size === instanceType);
-                        
-                        if (sizeData) {
-                            console.log(`Instância ${instanceType} encontrada no grupo ${instanceTypeGroup.type}`);
-                            
-                            if (sizeData.valueColumns) {
-                                // Procurar pelo sistema operacional específico
-                                const osData = sizeData.valueColumns.find(vc => vc.name === osValue);
-                                
-                                if (osData && osData.prices && osData.prices.USD) {
-                                    if (osData.prices.USD !== 'N/A*') {
-                                        price = osData.prices.USD;
-                                        priceDetails = {
-                                            instanceType: instanceType,
-                                            instanceTypeGroup: instanceTypeGroup.type,
-                                            region: region,
-                                            os: osValue,
-                                            price: price
-                                        };
-                                        console.log(`Preço encontrado: $${price}`);
-                                        break;
-                                    } else {
-                                        console.log(`Preço N/A* para ${instanceType} com ${osValue}`);
-                                    }
-                                } else {
-                                    console.log(`Sistema operacional ${osValue} não encontrado para ${instanceType}`);
-                                }
-                            } else {
-                                console.log(`valueColumns não encontrado para ${instanceType}`);
-                            }
-                        }
-                    }
-                }
-            } else {
-                console.log(`Região ${region} não encontrada no arquivo spot.json`);
-            }
-        } else {
-            console.log("Estrutura do arquivo spot.json não contém os dados esperados");
-        }
+        // Buscar preço usando a função dedicada com os dados em cache
+        const result = findSpotPrice(spotDataCache, region, instanceType, osValue);
         
         res.json({
             success: true,
             instanceType,
             region,
             os: os || 'linux',
-            price: price || "Preço não disponível",
-            details: priceDetails
+            price: result.price || "Preço não disponível",
+            details: result.details
         });
     } catch (error) {
         console.error("Erro ao obter preço spot:", error);

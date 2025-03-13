@@ -189,6 +189,62 @@ header {
     background-color: rgba(255,255,255,0.1);
 }
 
+/* Botão de atualização de preço spot */
+#update-spot-price-btn {
+    height: 30px;
+    line-height: 30px;
+    padding: 0 12px;
+    font-size: 13px;
+    white-space: nowrap;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-weight: 500;
+}
+
+#update-spot-price-btn:hover {
+    background-color: var(--accent-color-hover);
+}
+
+#update-spot-price-btn:active {
+    transform: translateY(1px);
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.section-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: var(--text-color);
+}
+
+/* Estilos para tabela ordenável */
+.sortable {
+    cursor: pointer;
+    position: relative;
+    padding-right: 8px;
+}
+
+.sortable:hover {
+    background-color: var(--border-color);
+}
+
+.sort-icon {
+    position: absolute;
+    right: 1px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 6px;
+}
+
 /* Ícones do botão de tema */
 .theme-toggle .sun-icon {
     display: none;

@@ -6,6 +6,8 @@ const rowsPerPage = 10;
 let awsInstances = [];
 let spotPriceMap = {};
 let isAwsConnected = false;
+let currentSortColumn = null;
+let currentSortDirection = null;
 
 // Elementos DOM - serão inicializados quando o documento estiver pronto
 let regionFilter;
@@ -165,6 +167,14 @@ function setupEventListeners() {
     regionFilter.addEventListener('change', () => {
         clearSpotPriceCache();
         applyFilters();
+    });
+
+    // Event listeners para ordenação
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const column = th.dataset.sort;
+            sortData(column);
+        });
     });
 }
 
@@ -345,6 +355,65 @@ function applyFilters() {
     
     // Atualizar gráficos com dados filtrados
     renderCharts();
+}
+
+// Função para ordenar os dados
+function sortData(column) {
+    const direction = column === currentSortColumn && currentSortDirection === 'asc' ? 'desc' : 'asc';
+    
+    filteredData.sort((a, b) => {
+        let valueA, valueB;
+        
+        switch(column) {
+            case 'instanceType':
+                valueA = a.instanceType;
+                valueB = b.instanceType;
+                break;
+            case 'region':
+                valueA = a.region;
+                valueB = b.region;
+                break;
+            case 'os':
+                valueA = a.os;
+                valueB = b.os;
+                break;
+            case 'savings':
+                valueA = parseFloat(a.savingsPercentage);
+                valueB = parseFloat(b.savingsPercentage);
+                break;
+            case 'spotPrice':
+                valueA = parseFloat(a.spotPrice);
+                valueB = parseFloat(b.spotPrice);
+                break;
+            case 'interruption':
+                valueA = getInterruptionPriority(a.interruptionLevel);
+                valueB = getInterruptionPriority(b.interruptionLevel);
+                break;
+            default:
+                return 0;
+        }
+
+        if (valueA < valueB) return direction === 'asc' ? -1 : 1;
+        if (valueA > valueB) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    currentSortColumn = column;
+    currentSortDirection = direction;
+
+    // Atualizar ícones de ordenação
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.removeAttribute('data-sort-direction');
+        const icon = th.querySelector('.sort-icon');
+        icon.textContent = '▾';
+        
+        if (th.dataset.sort === column) {
+            th.setAttribute('data-sort-direction', direction);
+            icon.textContent = direction === 'asc' ? '▴' : '▾';
+        }
+    });
+
+    renderTable();
 }
 
 // Renderizar tabela de dados
@@ -1696,24 +1765,29 @@ async function updateSpotPrices() {
         const selectedRegion = regionFilter.value;
         const regionToUpdate = selectedRegion === 'all' ? null : selectedRegion;
         
-        // Adicionar indicador de carregamento apenas nas células de preço spot da região selecionada na tabela atual
-        const spotPriceCells = document.querySelectorAll('#table-body tr td:nth-child(5)');
-        const tableRows = document.querySelectorAll('#table-body tr');
+        // Criar e mostrar um indicador de progresso
+        const progressContainer = document.createElement('div');
+        progressContainer.id = 'update-progress-container';
+        progressContainer.style.position = 'fixed';
+        progressContainer.style.top = '10px';
+        progressContainer.style.right = '10px';
+        progressContainer.style.padding = '10px';
+        progressContainer.style.backgroundColor = 'var(--card-bg)';
+        progressContainer.style.border = '1px solid var(--border-color)';
+        progressContainer.style.borderRadius = '5px';
+        progressContainer.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+        progressContainer.style.zIndex = '1000';
         
-        // Atualizar apenas as células da região selecionada ou todas se 'all' estiver selecionado
-        tableRows.forEach((row, index) => {
-            const regionCell = row.querySelector('td:nth-child(2)');
-            const spotPriceCell = row.querySelector('td:nth-child(5)');
-            
-            if (!regionToUpdate || (regionCell && regionCell.textContent === regionToUpdate)) {
-                if (spotPriceCell) {
-                    spotPriceCell.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Carregando...</div>';
-                }
-            }
-        });
+        const progressText = document.createElement('div');
+        progressText.id = 'update-progress-text';
+        progressText.textContent = 'Iniciando atualização...';
+        progressContainer.appendChild(progressText);
+        
+        document.body.appendChild(progressContainer);
         
         // Primeiro, disparamos a requisição para baixar os dados mais recentes
         console.log(`Solicitando download dos dados de preço spot mais recentes${regionToUpdate ? ' para região ' + regionToUpdate : ''}...`);
+        progressText.textContent = 'Baixando dados mais recentes...';
         
         try {
             const downloadResponse = await fetch('/api/update-spot-prices', { 
@@ -1730,20 +1804,10 @@ async function updateSpotPrices() {
             
             const downloadResult = await downloadResponse.json();
             console.log("Download concluído:", downloadResult);
-            
-            // Atualizar células na tabela com uma mensagem temporária de processamento
-            tableRows.forEach((row, index) => {
-                const regionCell = row.querySelector('td:nth-child(2)');
-                const spotPriceCell = row.querySelector('td:nth-child(5)');
-                
-                if (!regionToUpdate || (regionCell && regionCell.textContent === regionToUpdate)) {
-                    if (spotPriceCell) {
-                        spotPriceCell.innerHTML = '<div class="loading-spinner"><div class="spinner"></div> Processando...</div>';
-                    }
-                }
-            });
+            progressText.textContent = 'Download concluído, processando dados...';
         } catch (downloadError) {
             console.error("Erro ao baixar spot.json:", downloadError);
+            progressText.textContent = 'Erro ao baixar dados, usando cache existente...';
             // Continuar com os preços existentes, se houver um erro no download
         }
         
@@ -1756,9 +1820,12 @@ async function updateSpotPrices() {
         
         // Processar os dados por páginas para melhor desempenho
         const batchSize = 50; // Processar 50 instâncias por vez
+        let updatedSpotData = [...spotData]; // Criar uma cópia dos dados para atualizar
         
         for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
             const batch = itemsToUpdate.slice(i, i + batchSize);
+            progressText.textContent = `Processando ${Math.min(i + batchSize, itemsToUpdate.length)} de ${itemsToUpdate.length} instâncias...`;
+            
             const batchResults = await Promise.all(batch.map(async (item) => {
                 try {
                     const spotPrice = await getSpotPrice(
@@ -1778,30 +1845,39 @@ async function updateSpotPrices() {
             for (let j = 0; j < batchResults.length; j++) {
                 const updatedItem = batchResults[j];
                 // Encontrar o índice no spotData original
-                const originalIndex = spotData.findIndex(item => 
+                const originalIndex = updatedSpotData.findIndex(item => 
                     item.instanceType === updatedItem.instanceType && 
                     item.region === updatedItem.region && 
                     item.os === updatedItem.os
                 );
                 
                 if (originalIndex !== -1) {
-                    spotData[originalIndex] = updatedItem;
+                    updatedSpotData[originalIndex] = updatedItem;
                 }
             }
             
-            // Atualizar UI a cada lote para mostrar progresso
             console.log(`Processados ${Math.min(i + batchSize, itemsToUpdate.length)} de ${itemsToUpdate.length} itens`);
             
-            // Se estivermos processando muitos itens, atualizar a UI a cada lote
-            if (itemsToUpdate.length > 20) {
-                applyFilters(); // Recarregar a tabela com os dados atualizados até agora
-            }
+            // Não atualizamos a UI aqui para evitar o efeito de piscar
         }
         
-        // Reaplicar filtros após atualizar todos os dados
+        // Atualizar spotData com os dados atualizados
+        spotData = updatedSpotData;
+        
+        // Atualizar o cache de preços spot
+        createSpotPriceMap();
+        
+        // Reaplicar filtros após atualizar todos os dados (apenas uma vez)
+        progressText.textContent = 'Atualizando interface...';
         applyFilters();
         
-        // Remover mensagem de alerta para não interromper o usuário
+        // Remover o indicador de progresso após um breve atraso
+        setTimeout(() => {
+            if (document.getElementById('update-progress-container')) {
+                document.body.removeChild(document.getElementById('update-progress-container'));
+            }
+        }, 2000);
+        
         console.log(regionToUpdate 
             ? `Preços spot da região ${getRegionFullName(regionToUpdate)} atualizados com sucesso!` 
             : 'Preços spot de todas as regiões atualizados com sucesso!');
@@ -1809,6 +1885,11 @@ async function updateSpotPrices() {
     } catch (error) {
         console.error('Erro ao atualizar preços spot:', error);
         alert(`Erro ao atualizar preços spot: ${error.message}`);
+        
+        // Remover o indicador de progresso em caso de erro
+        if (document.getElementById('update-progress-container')) {
+            document.body.removeChild(document.getElementById('update-progress-container'));
+        }
     } finally {
         updateSpotPriceBtn.disabled = false;
         updateSpotPriceBtn.textContent = 'Atualizar Preço Spot da Região Selecionada';
