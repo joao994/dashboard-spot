@@ -3,9 +3,21 @@ const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const AWS = require('aws-sdk');
+
+// Verificar variável de ambiente para modo de desenvolvimento
+const DEV_MODE = process.env.DEV_MODE === 'true';
+console.log(`Modo de desenvolvimento: ${DEV_MODE ? 'ATIVADO' : 'DESATIVADO'}`);
 
 const app = express();
-app.use(cors());
+// Configurar o Express para analisar JSON
+app.use(express.json());
+app.use(cors({
+    origin: '*',  // Permitir todas as origens (para desenvolvimento)
+    methods: ['GET', 'POST'],  // Métodos permitidos
+    allowedHeaders: ['Content-Type', 'Accept'],  // Cabeçalhos permitidos
+    credentials: true  // Permitir cookies
+}));
 const PORT = 3000;
 
 // Configurar o Express para servir arquivos estáticos da pasta public
@@ -260,52 +272,123 @@ function findSpotPrice(spotData, region, instanceType, osValue) {
     return { price: null, details: null };
 }
 
+// API endpoint para retornar os dados de preço spot
 app.get('/api/spot-prices', async (req, res) => {
     try {
-        const data = await getSpotData();
-        res.json(data);
+        const formattedData = await getSpotData();
+        res.json(formattedData);
     } catch (error) {
-        console.error("Erro ao processar requisição:", error);
-        res.status(500).json({ error: "Erro interno do servidor" });
+        console.error("Erro na requisição:", error);
+        res.status(500).json({ error: "Erro ao processar a requisição" });
     }
 });
 
-// Endpoint para limpar o cache manualmente
-app.post('/api/clear-cache', (req, res) => {
+// API endpoint para assumir role na AWS
+app.post('/api/assume-role', async (req, res) => {
+    // Registra todas as informações da requisição para debug
+    console.log('[DEBUG] Nova requisição assume-role recebida:');
+    console.log('[DEBUG] Headers:', req.headers);
+    console.log('[DEBUG] Body:', req.body);
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    
     try {
-        if (fs.existsSync(CACHE_FILE)) {
-            fs.unlinkSync(CACHE_FILE);
-            console.log("Cache limpo com sucesso!");
-            res.json({ message: "Cache limpo com sucesso" });
-        } else {
-            res.json({ message: "Cache não existe" });
+        const { accountId, region, accessKey, secretKey } = req.body;
+        
+        console.log('[ASSUME-ROLE] Solicitação recebida:', { 
+            accountId, 
+            region, 
+            hasAccessKey: !!accessKey,
+            hasSecretKey: !!secretKey
+        });
+        
+        if (!accountId || !region) {
+            return res.status(400).json({ error: "accountId e region são obrigatórios" });
+        }
+        
+        // Proteger contra redirecionamentos no corpo da resposta
+        res.removeHeader('X-Powered-By');
+        
+        try {
+            // Configurar AWS SDK
+            if (accessKey && secretKey) {
+                console.log('[ASSUME-ROLE] Usando credenciais fornecidas');
+                // Se credenciais foram fornecidas, usá-las
+                AWS.config.update({
+                    region: region,
+                    accessKeyId: accessKey,
+                    secretAccessKey: secretKey
+                });
+            } else {
+                console.log('[ASSUME-ROLE] Usando credenciais do ambiente');
+                // Caso contrário, usar as credenciais do ambiente
+                AWS.config.update({ region: region });
+            }
+            
+            // Verificar configuração
+            console.log('[ASSUME-ROLE] Configuração AWS:', { 
+                region: AWS.config.region,
+                hasCredentials: !!AWS.config.credentials
+            });
+            
+            // Criar um cliente STS
+            const sts = new AWS.STS();
+            
+            // Verificar identidade atual
+            try {
+                const identity = await sts.getCallerIdentity().promise();
+                console.log('[ASSUME-ROLE] Identidade atual:', identity);
+            } catch (error) {
+                console.error('[ASSUME-ROLE] Erro ao verificar identidade:', error);
+                return res.status(401).json({ 
+                    error: "Erro ao verificar credenciais AWS", 
+                    details: error.message
+                });
+            }
+            
+            // Assume role
+            const roleArn = `arn:aws:iam::${accountId}:role/worker-node-group`;
+            console.log('[ASSUME-ROLE] Tentando assumir role:', roleArn);
+            
+            const assumeRoleResponse = await sts.assumeRole({
+                RoleArn: roleArn,
+                RoleSessionName: 'SpotDashboardSession',
+                DurationSeconds: 3600 // 1 hora
+            }).promise();
+            
+            console.log('[ASSUME-ROLE] Role assumida com sucesso');
+            
+            // Retornar as credenciais temporárias
+            return res.json({
+                credentials: {
+                    accessKeyId: assumeRoleResponse.Credentials.AccessKeyId,
+                    secretAccessKey: assumeRoleResponse.Credentials.SecretAccessKey,
+                    sessionToken: assumeRoleResponse.Credentials.SessionToken,
+                    expiration: assumeRoleResponse.Credentials.Expiration
+                },
+                assumedRoleUser: assumeRoleResponse.AssumedRoleUser
+            });
+            
+        } catch (error) {
+            console.error('[ASSUME-ROLE] Erro ao assumir role:', error);
+            return res.status(403).json({ 
+                error: `Erro ao assumir role na conta ${accountId}`, 
+                details: error.message 
+            });
         }
     } catch (error) {
-        console.error("Erro ao limpar cache:", error);
-        res.status(500).json({ error: "Erro ao limpar cache" });
-    }
-});
-
-// Endpoint para atualizar os preços spot
-app.get('/api/update-spot-prices', async (req, res) => {
-    try {
-        const filePath = await fetchAndSaveSpotJson();
-        res.json({ 
-            success: true, 
-            message: "Dados de preço spot baixados com sucesso", 
-            filePath: filePath 
-        });
-    } catch (error) {
-        console.error("Erro ao baixar dados de preço spot:", error);
-        res.status(500).json({ 
-            success: false, 
-            error: "Erro ao baixar dados de preço spot", 
+        console.error('[ASSUME-ROLE] Erro geral na requisição:', error);
+        return res.status(500).json({ 
+            error: "Erro interno no servidor", 
             details: error.message 
         });
     }
 });
 
-// Endpoint para obter preço spot de uma instância específica
+// API endpoint para buscar o preço spot mais recente
 app.get('/api/spot-price', (req, res) => {
     try {
         const { instanceType, region, os } = req.query;
@@ -366,9 +449,112 @@ app.get('/api/spot-price', (req, res) => {
     }
 });
 
+// Endpoint para limpar o cache manualmente
+app.post('/api/clear-cache', (req, res) => {
+    try {
+        if (fs.existsSync(CACHE_FILE)) {
+            fs.unlinkSync(CACHE_FILE);
+            console.log("Cache limpo com sucesso!");
+            res.json({ message: "Cache limpo com sucesso" });
+        } else {
+            res.json({ message: "Cache não existe" });
+        }
+    } catch (error) {
+        console.error("Erro ao limpar cache:", error);
+        res.status(500).json({ error: "Erro ao limpar cache" });
+    }
+});
+
+// Endpoint para atualizar os preços spot
+app.get('/api/update-spot-prices', async (req, res) => {
+    try {
+        const filePath = await fetchAndSaveSpotJson();
+        res.json({ 
+            success: true, 
+            message: "Dados de preço spot baixados com sucesso", 
+            filePath: filePath 
+        });
+    } catch (error) {
+        console.error("Erro ao baixar dados de preço spot:", error);
+        res.status(500).json({ 
+            success: false, 
+            error: "Erro ao baixar dados de preço spot", 
+            details: error.message 
+        });
+    }
+});
+
+// API endpoint de teste simples para verificar se o servidor está funcionando
+app.get('/api/test', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ 
+        success: true, 
+        message: 'API respondendo corretamente', 
+        timestamp: new Date().toISOString() 
+    });
+});
+
 // Rota para a página inicial
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Rota para verificar o modo de desenvolvimento
+app.get('/api/config', (req, res) => {
+    res.json({
+        devMode: DEV_MODE
+    });
+});
+
+// Rota para obter preço spot específico
+app.get('/api/spot-price', async (req, res) => {
+    try {
+        const { instanceType, region, os } = req.query;
+        
+        if (!instanceType || !region || !os) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Parâmetros necessários: instanceType, region, os' 
+            });
+        }
+        
+        // Normalizar o sistema operacional
+        const normalizedOs = os.toLowerCase();
+        
+        // Buscar dados do Spot
+        const spotData = await getSpotData();
+        
+        // Procurar o preço spot específico
+        for (const item of spotData) {
+            if (item.instanceType === instanceType && 
+                item.region === region && 
+                item.os.toLowerCase() === normalizedOs) {
+                
+                return res.json({
+                    success: true,
+                    price: item.savingsOverOnDemand,
+                    savings: item.savingsOverOnDemand,
+                    interruption: item.interruptionRate,
+                    interruption_level: item.interruptionLevel
+                });
+            }
+        }
+        
+        // Se não encontrar preço spot para a combinação exata
+        return res.json({
+            success: false,
+            price: "Preço não disponível",
+            message: "Preço spot não disponível para esta combinação específica. Tente usar uma estimativa baseada na economia média."
+        });
+        
+    } catch (error) {
+        console.error("Erro ao buscar preço spot:", error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro ao buscar preço spot',
+            details: error.message
+        });
+    }
 });
 
 // Rota para qualquer outra requisição que não seja encontrada

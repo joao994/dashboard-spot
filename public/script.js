@@ -76,7 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
     pagination = document.getElementById('pagination');
     exportBtn = document.getElementById('export-csv');
     connectAwsBtn = document.getElementById('connect-aws-btn');
-    saveCredentialsBtn = document.getElementById('save-credentials-btn');
     credentialsStatus = document.getElementById('credentials-status');
     awsAnalysisResults = document.getElementById('aws-analysis-results');
     awsAnalysisSummary = document.getElementById('aws-analysis-summary');
@@ -95,22 +94,109 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Configurar listeners de eventos
     setupEventListeners();
-
+    
+    // Configurar toggle de modo de desenvolvimento
+    const devModeToggle = document.getElementById('dev-mode-toggle');
+    if (devModeToggle) {
+        devModeToggle.addEventListener('change', function() {
+            const devCredFields = document.querySelectorAll('.dev-credentials');
+            devCredFields.forEach(field => {
+                if (this.checked) {
+                    field.classList.remove('hide');
+                } else {
+                    field.classList.add('hide');
+                }
+            });
+        });
+    }
+    
     // Carregar dados iniciais
     loadData();
+    
+    // Verificar se há uma sessão AWS ativa salva
+    restoreAwsSession();
+    
+    // Verificar modo de desenvolvimento do servidor
+    checkDevMode();
 });
+
+// Função para restaurar uma sessão AWS quando a página carrega
+function restoreAwsSession() {
+    try {
+        const isConnected = localStorage.getItem('awsConnected') === 'true';
+        if (isConnected) {
+            const accountId = localStorage.getItem('awsAccountId');
+            const region = localStorage.getItem('awsRegion');
+            
+            if (accountId && region) {
+                console.log('[AWS Session] Sessão anterior detectada para conta:', accountId);
+                
+                // Preencher formulário com valores salvos
+                document.getElementById('aws-account').value = accountId;
+                document.getElementById('aws-region').value = region;
+                
+                // Atualizar interface para mostrar que há uma conexão anterior
+                connectionStatus.textContent = `Sessão anterior: ${accountId}`;
+                connectionStatus.classList.remove('status-disconnected');
+                connectionStatus.classList.add('status-previous-session');
+                
+                // Mostrar resumo se estiver disponível
+                document.getElementById('aws-analysis-summary').classList.remove('hide');
+            }
+        }
+    } catch (error) {
+        console.warn('[AWS Session] Erro ao restaurar sessão:', error);
+        // Limpar qualquer estado que possa estar corrompido
+        localStorage.removeItem('awsConnected');
+        localStorage.removeItem('awsAccountId');
+        localStorage.removeItem('awsRegion');
+    }
+}
+
+// Função para verificar o modo de desenvolvimento do servidor
+async function checkDevMode() {
+    try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+            const config = await response.json();
+            
+            // Obter referências aos elementos
+            const devModeToggle = document.getElementById('dev-mode-toggle');
+            const devModeToggleContainer = document.querySelector('.dev-mode-toggle');
+            const devCredFields = document.querySelectorAll('.dev-credentials');
+            
+            if (config.devMode) {
+                console.log('[Config] Modo de desenvolvimento ativado pelo servidor');
+                // Mostrar o toggle e ativá-lo automaticamente
+                if (devModeToggleContainer) devModeToggleContainer.style.display = 'block';
+                if (devModeToggle) {
+                    devModeToggle.checked = true;
+                    // Disparar o evento change para mostrar os campos
+                    const event = new Event('change');
+                    devModeToggle.dispatchEvent(event);
+                }
+            } else {
+                console.log('[Config] Modo de desenvolvimento desativado pelo servidor');
+                // Esconder completamente o toggle e os campos de credenciais
+                if (devModeToggleContainer) devModeToggleContainer.style.display = 'none';
+                // Esconder todos os campos de credenciais
+                devCredFields.forEach(field => {
+                    field.classList.add('hide');
+                });
+                // Garantir que o toggle esteja desativado
+                if (devModeToggle) devModeToggle.checked = false;
+            }
+        }
+    } catch (error) {
+        console.warn('[Config] Erro ao verificar configuração:', error);
+        // Em caso de erro, esconder para garantir segurança
+        const devModeToggleContainer = document.querySelector('.dev-mode-toggle');
+        if (devModeToggleContainer) devModeToggleContainer.style.display = 'none';
+    }
+}
 
 // Configurar todos os event listeners
 function setupEventListeners() {
-    // Inicializar referências aos filtros
-    regionFilter = document.getElementById('region-filter');
-    osFilter = document.getElementById('os-filter');
-    instanceFilter = document.getElementById('instance-filter');
-    architectureFilter = document.getElementById('architecture-filter');
-    interruptionFilter = document.getElementById('interruption-filter');
-    sizeFilter = document.getElementById('size-filter');
-    tableBody = document.getElementById('table-body');
-    
     // Adicionar event listeners para filtros
     regionFilter.addEventListener('change', applyFilters);
     osFilter.addEventListener('change', applyFilters);
@@ -120,35 +206,66 @@ function setupEventListeners() {
     sizeFilter.addEventListener('change', applyFilters);
 
     // Event listener para exportar para CSV
-    document.getElementById('export-csv').addEventListener('click', exportCsv);
+    exportBtn.addEventListener('click', exportCsv);
     
-    // Botões relacionados à AWS
-    document.getElementById('connect-aws-btn').addEventListener('click', connectToAws);
-    document.getElementById('save-credentials-btn').addEventListener('click', saveAwsCredentials);
-    document.getElementById('view-full-analysis').addEventListener('click', () => {
-        document.getElementById('aws-analysis-results').classList.remove('hide');
+    // Botões relacionados à AWS - não precisamos mais deste listener direto, pois está usando onsubmit do formulário
+    // connectAwsBtn.addEventListener('click', connectToAws);
+    
+    // Ver análise completa
+    viewFullAnalysisBtn.addEventListener('click', () => {
+        awsAnalysisResults.classList.remove('hide');
     });
-    document.getElementById('close-analysis').addEventListener('click', () => {
-        document.getElementById('aws-analysis-results').classList.add('hide');
+    
+    // Fechar análise - melhorado para garantir que funcione
+    closeAnalysisBtn.addEventListener('click', () => {
+        awsAnalysisResults.classList.add('hide');
+        
+        // Verificar se o botão Nova Análise existe e adicioná-lo ao DOM se necessário
+        let newAnalysisBtn = document.getElementById('new-analysis-btn');
+        if (!newAnalysisBtn) {
+            newAnalysisBtn = document.createElement('button');
+            newAnalysisBtn.id = 'new-analysis-btn';
+            newAnalysisBtn.className = 'aws-btn secondary-btn';
+            newAnalysisBtn.textContent = 'Nova Análise';
+            
+            // Adicionar ao resumo na sidebar
+            const analysisSection = document.getElementById('aws-analysis-summary');
+            if (analysisSection) {
+                analysisSection.appendChild(newAnalysisBtn);
+            }
+        }
+        
+        // Garantir que a função de click esteja atribuída
+        if (newAnalysisBtn) {
+            // Remover event listeners antigos para evitar duplicação
+            newAnalysisBtn.replaceWith(newAnalysisBtn.cloneNode(true));
+            newAnalysisBtn = document.getElementById('new-analysis-btn');
+            
+            // Adicionar novo event listener
+            newAnalysisBtn.addEventListener('click', function() {
+                openSidebar();
+                document.getElementById('aws-account').focus();
+            });
+            
+            // Mostrar o botão
+            newAnalysisBtn.classList.remove('hide');
+        }
     });
     
     // Event listeners para menu lateral
-    document.getElementById('menu-toggle').addEventListener('click', function(e) {
+    menuToggle.addEventListener('click', function(e) {
         e.stopPropagation();
-        if (document.querySelector('.sidebar').classList.contains('active')) {
+        if (sidebar.classList.contains('active')) {
             closeSidebar();
         } else {
             openSidebar();
         }
     });
     
-    document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
+    sidebarCloseBtn.addEventListener('click', closeSidebar);
     
     // Event listener para clicar fora do menu e fechá-lo
     document.addEventListener('click', function(e) {
-        const sidebar = document.querySelector('.sidebar');
-        const menuToggle = document.getElementById('menu-toggle');
-        
         if (sidebar.classList.contains('active') && 
             !sidebar.contains(e.target) && 
             e.target !== menuToggle) {
@@ -157,7 +274,7 @@ function setupEventListeners() {
     });
     
     // Impedir que cliques dentro do sidebar propaguem para o document
-    document.querySelector('.sidebar').addEventListener('click', function(e) {
+    sidebar.addEventListener('click', function(e) {
         e.stopPropagation();
     });
 
@@ -176,6 +293,16 @@ function setupEventListeners() {
             sortData(column);
         });
     });
+    
+    // Melhor não confiar apenas no onsubmit do HTML, adicionar também por JavaScript
+    const awsCredentialsForm = document.getElementById('aws-credentials-form');
+    if (awsCredentialsForm) {
+        awsCredentialsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            connectToAws();
+            return false;
+        });
+    }
 }
 
 // Função para abrir a sidebar
@@ -207,9 +334,6 @@ async function loadData() {
         
         // Renderizar gráficos
         renderCharts();
-        
-        // Carregar credenciais salvas, se existirem
-        loadSavedCredentials();
         
     } catch (error) {
         console.error('Erro ao carregar dados:', error);
@@ -1184,8 +1308,24 @@ async function getOnDemandPrice(instanceType, region, os) {
         const productsResponse = await pricing.getProducts(params).promise();
         
         if (productsResponse.PriceList && productsResponse.PriceList.length > 0) {
-            // Parse o JSON da lista de preços
-            const priceData = JSON.parse(productsResponse.PriceList[0]);
+            let priceData;
+            
+            // Verificar se PriceList[0] é uma string ou um objeto
+            if (typeof productsResponse.PriceList[0] === 'string') {
+                // Parse apenas se for uma string JSON
+                try {
+                    priceData = JSON.parse(productsResponse.PriceList[0]);
+                } catch (parseError) {
+                    console.error('Erro ao fazer parse do JSON:', parseError);
+                    return estimateOnDemandPrice(instanceType);
+                }
+            } else if (typeof productsResponse.PriceList[0] === 'object') {
+                // Se já for um objeto, use diretamente
+                priceData = productsResponse.PriceList[0];
+            } else {
+                console.warn('Formato inesperado de dados de preço:', typeof productsResponse.PriceList[0]);
+                return estimateOnDemandPrice(instanceType);
+            }
             
             // Navegar pela estrutura de preços para encontrar o preço por hora
             const terms = priceData.terms;
@@ -1213,7 +1353,7 @@ async function getOnDemandPrice(instanceType, region, os) {
 function estimateOnDemandPrice(instanceType) {
     // Preços on-demand de referência para estimativas (USD/hora)
     const baseOnDemandPrices = {
-        't2.micro': 0.0116,
+        't2.micro': 0.99,
         't2.small': 0.023,
         't2.medium': 0.0464,
         't2.large': 0.0928,
@@ -1360,112 +1500,341 @@ async function getSpotPrice(instanceType, region, os, savingsPercentage) {
 }
 
 async function connectToAws() {
-    const accessKey = document.getElementById('aws-access-key').value;
-    const secretKey = document.getElementById('aws-secret-key').value;
+    const accountId = document.getElementById('aws-account').value;
     const region = document.getElementById('aws-region').value;
+    const isDevMode = document.getElementById('dev-mode-toggle').checked;
+    const localAccessKey = document.getElementById('aws-local-access-key').value;
+    const localSecretKey = document.getElementById('aws-local-secret-key').value;
     
-    if (!accessKey || !secretKey) {
-        alert('Por favor, preencha as credenciais AWS.');
+    if (!accountId) {
+        alert('Por favor, informe o número da conta AWS.');
         return;
     }
+
+    // Prevenir comportamento padrão que possa causar recarga da página
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+
+    // Mostrar status de carregamento
+    connectionStatus.textContent = 'Conectando...';
+    connectionStatus.className = 'connection-status status-connecting';
     
+    console.log('[AWS Connect] Iniciando conexão AWS para a conta:', accountId, 'região:', region);
+
     try {
-        // Configurar AWS SDK
-        AWS.config.update({
-            accessKeyId: accessKey,
-            secretAccessKey: secretKey,
-            region: region
-        });
+        // Exibir a tela de análise antes de processar as instâncias
+        // Isso garante que o usuário veja a tela de loading enquanto os dados são processados
+        document.getElementById('aws-analysis-results').classList.remove('hide');
         
-        // Criar serviço EC2
+        // Fechar a sidebar (menu lateral) para melhor visualização da análise
+        closeSidebar();
+        
+        // Mostrar indicador de carregamento na tela de análise
+        const instancesTableBody = document.getElementById('instances-table-body');
+        instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Conectando à AWS e obtendo credenciais...</td></tr>';
+        
+        // Verificar se o SDK AWS está disponível
+        if (typeof AWS === 'undefined') {
+            console.error('[AWS Connect] SDK AWS não está carregado');
+            connectionStatus.textContent = 'Erro: SDK AWS não disponível';
+            alert('SDK AWS não está carregado. Verifique se o script foi incluído corretamente na página.');
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
+        
+        // Usar o servidor como proxy para assume-role (evita problemas de CORS)
+        console.log('[AWS Connect] Solicitando assume-role via servidor...');
+        connectionStatus.textContent = `Solicitando acesso à conta ${accountId}...`;
+        
+        try {
+            const data = {
+                accountId,
+                region,
+                accessKey: isDevMode ? localAccessKey : null,
+                secretKey: isDevMode ? localSecretKey : null
+            };
+            
+            console.log('[AWS Connect] Dados da requisição:', {
+                accountId: data.accountId,
+                region: data.region,
+                hasAccessKey: !!data.accessKey,
+                hasSecretKey: !!data.secretKey
+            });
+            
+            // Atualizar a mensagem de loading
+            instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Solicitando acesso à conta AWS...</td></tr>';
+            
+            // Usar o endereço absoluto para evitar problemas de CORS
+            const serverUrl = window.location.origin + '/api/assume-role';
+            console.log('[AWS Connect] URL do servidor:', serverUrl);
+            
+            const response = await fetch(serverUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(data),
+                mode: 'cors', // Modo CORS explícito
+                credentials: 'same-origin' // Enviar cookies se estiver no mesmo domínio
+            });
+            
+            console.log('[AWS Connect] Resposta recebida:', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: {
+                    contentType: response.headers.get('content-type'),
+                    contentLength: response.headers.get('content-length')
+                }
+            });
+            
+            // Verificar o tipo de conteúdo da resposta
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                // Se a resposta não for JSON, tentar obter o texto para debug
+                const errorText = await response.text();
+                console.error('[AWS Connect] Resposta não-JSON recebida:', {
+                    status: response.status,
+                    contentType,
+                    responseText: errorText.substring(0, 500) // Mostra apenas os primeiros 500 caracteres
+                });
+                
+                connectionStatus.textContent = 'Erro no formato de resposta';
+                alert(`Erro na resposta do servidor (${response.status}): Formato inválido`);
+                document.getElementById('aws-analysis-results').classList.add('hide');
+                return;
+            }
+            
+            // Se o tipo for JSON, fazer o parse normal
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('[AWS Connect] Erro na resposta do servidor:', errorData);
+                connectionStatus.textContent = 'Erro ao assumir role';
+                alert(`Erro ao assumir role: ${errorData.error || 'Erro desconhecido'}\n${errorData.details || ''}`);
+                document.getElementById('aws-analysis-results').classList.add('hide');
+                return;
+            }
+            
+            const assumeRoleResponse = await response.json();
+            console.log('[AWS Connect] Role assumida com sucesso via servidor');
+            
+            if (!assumeRoleResponse || !assumeRoleResponse.credentials) {
+                console.error('[AWS Connect] Resposta inválida do servidor:', assumeRoleResponse);
+                connectionStatus.textContent = 'Resposta inválida';
+                alert(`Resposta inválida do servidor: Credenciais não encontradas`);
+                document.getElementById('aws-analysis-results').classList.add('hide');
+                return;
+            }
+            
+            // Atualizar a mensagem de loading
+            instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Configurando credenciais temporárias...</td></tr>';
+            
+            // Configurar AWS SDK com as credenciais temporárias
+            console.log('[AWS Connect] Configurando credenciais temporárias');
+            AWS.config.update({
+                region: region,
+                credentials: new AWS.Credentials({
+                    accessKeyId: assumeRoleResponse.credentials.accessKeyId,
+                    secretAccessKey: assumeRoleResponse.credentials.secretAccessKey,
+                    sessionToken: assumeRoleResponse.credentials.sessionToken
+                })
+            });
+        } catch (fetchError) {
+            console.error('[AWS Connect] Erro na requisição ao servidor:', fetchError);
+            connectionStatus.textContent = 'Erro na comunicação';
+            alert(`Erro ao comunicar com o servidor: ${fetchError.message || 'Erro desconhecido'}`);
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
+        
+        // Verificar se as novas credenciais estão funcionando
+        console.log('[AWS Connect] Verificando novas credenciais...');
+        connectionStatus.textContent = 'Verificando credenciais...';
+        
+        try {
+            // Atualizar a mensagem de loading
+            instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Verificando credenciais AWS...</td></tr>';
+            
+            const sts = new AWS.STS();
+            let identity;
+            
+            try {
+                identity = await sts.getCallerIdentity().promise();
+                console.log('[AWS Connect] Identidade após assume-role:', identity);
+                connectionStatus.textContent = `Conectado como: ${identity.Arn}`;
+            } catch (error) {
+                console.error('[AWS Connect] Erro ao verificar credenciais:', error);
+                connectionStatus.textContent = 'Erro ao verificar credenciais';
+                alert(`Erro ao verificar credenciais: ${error.message || 'Erro desconhecido'}`);
+                document.getElementById('aws-analysis-results').classList.add('hide');
+                return;
+            }
+        } catch (awsError) {
+            console.error('[AWS Connect] Erro com o SDK da AWS:', awsError);
+            connectionStatus.textContent = 'Erro com o SDK AWS';
+            alert(`Erro com o SDK da AWS: ${awsError.message || 'Erro desconhecido'}`);
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
+        
+        // Verificar se ainda temos o SDK AWS disponível antes de criar serviços
+        if (typeof AWS === 'undefined' || typeof AWS.EC2 !== 'function') {
+            console.error('[AWS Connect] SDK AWS não está mais disponível ou EC2 não é uma função');
+            connectionStatus.textContent = 'Erro: SDK AWS indisponível';
+            alert('SDK AWS não está mais disponível. Recarregue a página e tente novamente.');
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
+        
+        // Criar serviço EC2 com as novas credenciais
+        console.log('[AWS Connect] Criando cliente EC2...');
         const ec2 = new AWS.EC2();
         
         // Buscar instâncias EC2
-        const response = await ec2.describeInstances({
-            Filters: [
-                {
-                    Name: 'instance-state-name',
-                    Values: ['running']
-                }
-            ]
-        }).promise();
+        console.log('[AWS Connect] Buscando instâncias EC2...');
+        connectionStatus.textContent = 'Buscando instâncias EC2...';
+        
+        // Atualizar a mensagem de loading
+        instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Buscando instâncias EC2...</td></tr>';
+        
+        let ec2Response;
+        try {
+            ec2Response = await ec2.describeInstances({
+                Filters: [
+                    {
+                        Name: 'instance-state-name',
+                        Values: ['running']
+                    }
+                ]
+            }).promise();
+            
+            console.log('[AWS Connect] Resposta EC2 recebida');
+        } catch (error) {
+            console.error('[AWS Connect] Erro ao buscar instâncias EC2:', error);
+            connectionStatus.textContent = 'Erro ao buscar instâncias';
+            alert(`Erro ao buscar instâncias EC2: ${error.message || 'Erro desconhecido'}`);
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
+        
+        // Verificar resposta
+        if (!ec2Response || !ec2Response.Reservations) {
+            console.error('[AWS Connect] Resposta EC2 inválida:', ec2Response);
+            connectionStatus.textContent = 'Erro na resposta EC2';
+            alert('Erro: A resposta do EC2 não contém os dados esperados.');
+            document.getElementById('aws-analysis-results').classList.add('hide');
+            return;
+        }
         
         // Processar instâncias
+        console.log('[AWS Connect] Processando instâncias...');
         awsInstances = [];
         let totalCurrentCost = 0;
         let totalSpotCost = 0;
         
-        // Processamento em lotes das instâncias para melhor desempenho
-        const instances = [];
-        response.Reservations.forEach(reservation => {
-            reservation.Instances.forEach(instance => {
-                instances.push(instance);
-            });
-        });
-        
         // Mostrar indicador de carregamento
-        const instancesTableBody = document.getElementById('instances-table-body');
         instancesTableBody.innerHTML = '<tr><td colspan="7" class="loading">Obtendo preços e analisando instâncias...</td></tr>';
+        
+        // Extrair todas as instâncias
+        const instances = [];
+        if (ec2Response.Reservations && ec2Response.Reservations.length > 0) {
+            ec2Response.Reservations.forEach(reservation => {
+                if (reservation.Instances && reservation.Instances.length > 0) {
+                    reservation.Instances.forEach(instance => {
+                        instances.push(instance);
+                    });
+                }
+            });
+        }
+        
+        console.log(`[AWS Connect] Encontradas ${instances.length} instâncias EC2 em execução`);
+        
+        if (instances.length === 0) {
+            connectionStatus.textContent = `Conectado à conta ${accountId} (0 instâncias)`;
+            connectionStatus.classList.remove('status-disconnected');
+            connectionStatus.classList.add('status-connected');
+            
+            instancesTableBody.innerHTML = '<tr><td colspan="7" class="no-instances">Nenhuma instância em execução encontrada nesta conta/região</td></tr>';
+            
+            isAwsConnected = true;
+            document.getElementById('aws-analysis-summary').classList.remove('hide');
+            // Não fechar a tela de análise mesmo sem instâncias
+            // document.getElementById('aws-analysis-results').classList.add('hide');
+            
+            alert('Nenhuma instância EC2 em execução foi encontrada na conta especificada.');
+            return;
+        }
+        
+        // Salvar credenciais e estado de conexão no localStorage para persistir entre refreshes
+        try {
+            localStorage.setItem('awsConnected', 'true');
+            localStorage.setItem('awsAccountId', accountId);
+            localStorage.setItem('awsRegion', region);
+            console.log('[AWS Connect] Estado de conexão salvo no localStorage');
+        } catch (storageError) {
+            console.warn('[AWS Connect] Não foi possível salvar estado no localStorage:', storageError);
+        }
         
         // Processar instâncias em lotes para não sobrecarregar a API
         const batchSize = 5;
         for (let i = 0; i < instances.length; i += batchSize) {
             const batch = instances.slice(i, i + batchSize);
             await Promise.all(batch.map(async (instance) => {
-                // Determinar o sistema operacional
-                let os = 'linux'; // padrão
+                // Processamento de instância
+                const instanceType = instance.InstanceType;
+                const instanceId = instance.InstanceId;
+                let os = 'linux';
+                
+                // Determinar SO com base na AMI ou nome
                 if (instance.Platform === 'windows') {
-                    os = 'mswin';
+                    os = 'windows';
                 }
                 
-                // Buscar a porcentagem de economia do mapeamento de dados da API
-                const key = `${region}:${instance.InstanceType}:${os}`;
-                const pricingInfo = spotPriceMap[key] || {
-                    savingsOverOnDemand: "N/A",
-                    interruptionRate: "N/A",
-                    interruptionLevel: 'N/A'
-                };
+                // Determinar elegibilidade para spot (instâncias com EBS e sem serviços críticos)
+                const isEligible = true; // Lógica simplificada - na prática, verificar workload
                 
-                // Verificar se é elegível para spot (não "very high" e tem dados)
-                const isEligible = pricingInfo.interruptionLevel !== 'very high' &&
-                    pricingInfo.interruptionLevel !== 'N/A' &&
-                    typeof pricingInfo.savingsOverOnDemand === 'number';
-                
-                // Obter preço on-demand (API)
-                const onDemandPrice = await getOnDemandPrice(instance.InstanceType, region, os);
-                
-                // Calcular custo mensal on-demand (730 horas por mês)
-                const monthlyOnDemand = onDemandPrice * 730;
-                
-                // Adicionar ao total
-                totalCurrentCost += monthlyOnDemand;
+                // Calcular custo on-demand
+                const onDemandPrice = await getOnDemandPrice(instanceType, region, os);
+                const monthlyOnDemand = onDemandPrice * 24 * 30; // ~730h/mês
                 
                 // Calcular custo spot e economia, se elegível
                 let monthlySpot = monthlyOnDemand;
+                let savingsPercentage = 0;
+                
                 if (isEligible) {
                     const spotPrice = await getSpotPrice(
-                        instance.InstanceType, 
+                        instanceType, 
                         region, 
-                        os, 
-                        pricingInfo.savingsOverOnDemand
+                        os,
+                        80 // Estimativa de economia média
                     );
-                    monthlySpot = spotPrice * 730;
-                    totalSpotCost += monthlySpot;
-                } else {
-                    totalSpotCost += monthlyOnDemand; // Se não for elegível, manter o preço on-demand
+                    monthlySpot = spotPrice * 24 * 30;
+                    
+                    // Calcular porcentagem de economia
+                    if (monthlyOnDemand > 0) {
+                        savingsPercentage = ((monthlyOnDemand - monthlySpot) / monthlyOnDemand) * 100;
+                    }
                 }
+                
+                // Calcular economia
+                const savings = isEligible ? monthlyOnDemand - monthlySpot : 0;
+                
+                // Adicionar ao custo total
+                totalCurrentCost += monthlyOnDemand;
+                totalSpotCost += isEligible ? monthlySpot : monthlyOnDemand;
                 
                 // Adicionar à lista de instâncias
                 awsInstances.push({
-                    id: instance.InstanceId,
-                    type: instance.InstanceType,
+                    id: instanceId,
+                    type: instanceType,
                     region: region,
+                    os: os,
                     onDemandCost: monthlyOnDemand,
-                    spotCost: isEligible ? monthlySpot : 'N/A',
-                    savings: isEligible ? (monthlyOnDemand - monthlySpot) : 'N/A',
-                    savingsPercentage: isEligible ? pricingInfo.savingsOverOnDemand : 'N/A',
-                    eligible: isEligible,
-                    interruptionLevel: pricingInfo.interruptionLevel
+                    spotCost: isEligible ? monthlySpot : monthlyOnDemand,
+                    savings: savings,
+                    savingsPercentage: savingsPercentage,
+                    eligible: isEligible
                 });
             }));
             
@@ -1477,7 +1846,7 @@ async function connectToAws() {
         
         // Calcular economia total
         const totalSavings = totalCurrentCost - totalSpotCost;
-        const savingsPercentage = (totalSavings / totalCurrentCost * 100);
+        const savingsPercentage = (totalSavings / totalCurrentCost * 100) || 0;
         
         // Atualizar a interface com símbolo $
         document.getElementById('current-cost').textContent = `$${totalCurrentCost.toFixed(2)}`;
@@ -1492,18 +1861,51 @@ async function connectToAws() {
         renderSavingsComparisonChart(totalCurrentCost, totalSpotCost);
         
         // Exibir resumo na barra lateral
-        awsAnalysisSummary.classList.remove('hide');
+        document.getElementById('aws-analysis-summary').classList.remove('hide');
+        
+        // Garantir que o botão "Fechar Análise" esteja visível
+        const closeAnalysisBtn = document.getElementById('close-analysis');
+        if (closeAnalysisBtn) {
+            closeAnalysisBtn.classList.remove('hide');
+        }
+        
+        // Adicionar botão "Nova Análise" se ele não existir
+        let newAnalysisBtn = document.getElementById('new-analysis-btn');
+        if (!newAnalysisBtn) {
+            newAnalysisBtn = document.createElement('button');
+            newAnalysisBtn.id = 'new-analysis-btn';
+            newAnalysisBtn.className = 'aws-btn secondary-btn';
+            newAnalysisBtn.textContent = 'Nova Análise';
+            newAnalysisBtn.addEventListener('click', function() {
+                // Mostrar o sidebar para permitir nova análise
+                openSidebar();
+                // Focar no campo de conta AWS
+                document.getElementById('aws-account').focus();
+            });
+            
+            // Inserir antes do botão "Fechar Análise"
+            if (closeAnalysisBtn) {
+                closeAnalysisBtn.parentNode.insertBefore(newAnalysisBtn, closeAnalysisBtn);
+            }
+        } else {
+            newAnalysisBtn.classList.remove('hide');
+        }
         
         // Atualizar status de conexão
-        connectionStatus.textContent = 'Conectado';
+        connectionStatus.textContent = `Conectado à conta ${accountId}`;
         connectionStatus.classList.remove('status-disconnected');
         connectionStatus.classList.add('status-connected');
         
         isAwsConnected = true;
         
     } catch (error) {
-        console.error('Erro ao conectar com AWS:', error);
-        alert(`Erro ao conectar com AWS: ${error.message}`);
+        console.error('[AWS Connect] Erro ao conectar com AWS:', error);
+        connectionStatus.textContent = 'Erro na conexão';
+        connectionStatus.className = 'connection-status status-disconnected';
+        alert(`Erro ao conectar com AWS: ${error.message || 'Erro desconhecido'}`);
+        
+        // Fechar tela de análise em caso de erro para não mostrar dados parciais
+        document.getElementById('aws-analysis-results').classList.add('hide');
     }
 }
 
@@ -1549,7 +1951,9 @@ function renderInstancesTable() {
         
         const savingsCell = document.createElement('td');
         if (instance.eligible) {
-            savingsCell.textContent = `$${instance.savings.toFixed(2)} (${instance.savingsPercentage.toFixed(0)}%)`;
+            // Usar a porcentagem de economia já calculada
+            const savingsPercentage = instance.savingsPercentage || 0;
+            savingsCell.textContent = `$${instance.savings.toFixed(2)} (${savingsPercentage.toFixed(0)}%)`;
             savingsCell.style.color = '#28a745';
         } else {
             savingsCell.textContent = 'N/A';
@@ -1565,50 +1969,6 @@ function renderInstancesTable() {
         
         tableBody.appendChild(row);
     });
-}
-
-// Salvar credenciais localmente
-function saveAwsCredentials() {
-    const accessKey = document.getElementById('aws-access-key').value;
-    const secretKey = document.getElementById('aws-secret-key').value;
-    const region = document.getElementById('aws-region').value;
-    
-    if (!accessKey || !secretKey) {
-        alert('Por favor, preencha as credenciais AWS.');
-        return;
-    }
-    
-    // Salvar no localStorage
-    localStorage.setItem('aws_access_key', accessKey);
-    localStorage.setItem('aws_secret_key', secretKey);
-    localStorage.setItem('aws_region', region);
-    
-    // Exibir mensagem de sucesso
-    credentialsStatus.classList.remove('hide');
-    
-    // Ocultar a mensagem após 3 segundos
-    setTimeout(() => {
-        credentialsStatus.classList.add('hide');
-    }, 3000);
-}
-
-// Carregar credenciais salvas
-function loadSavedCredentials() {
-    const accessKey = localStorage.getItem('aws_access_key');
-    const secretKey = localStorage.getItem('aws_secret_key');
-    const region = localStorage.getItem('aws_region');
-    
-    if (accessKey) {
-        document.getElementById('aws-access-key').value = accessKey;
-    }
-    
-    if (secretKey) {
-        document.getElementById('aws-secret-key').value = secretKey;
-    }
-    
-    if (region) {
-        document.getElementById('aws-region').value = region;
-    }
 }
 
 // Gráfico de comparação de arquiteturas (ARM vs x86)

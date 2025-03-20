@@ -203,6 +203,7 @@ header {
     cursor: pointer;
     transition: background-color 0.2s ease;
     font-weight: 500;
+    margin-left: auto;
 }
 
 #update-spot-price-btn:hover {
@@ -216,14 +217,16 @@ header {
 .section-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
     margin-bottom: 20px;
 }
 
 .section-header h2 {
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     color: var(--text-color);
+    flex: 1;
 }
 
 /* Estilos para tabela ordenável */
@@ -497,6 +500,12 @@ table tr:hover, .data-table tr:hover {
     border: 1px solid rgba(16, 163, 69, 0.3);
 }
 
+.status-connecting {
+    background-color: rgba(255, 193, 7, 0.2);
+    color: rgb(255, 193, 7);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
 .status-disconnected {
     background-color: rgba(224, 47, 68, 0.2);
     color: #e02f44;
@@ -556,7 +565,7 @@ table tr:hover, .data-table tr:hover {
 }
 
 .hide {
-    display: none;
+    display: none !important;
 }
 
 /* Instâncias ARM */
@@ -699,4 +708,179 @@ table tr:hover, .data-table tr:hover {
     .main-content.sidebar-open {
         margin-left: 0;
     }
+}
+
+.table-actions {
+    margin-top: 20px;
+    padding: 10px;
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-color);
+}
+
+.table-actions button {
+    margin-left: 10px;
+}
+
+.dev-mode-toggle {
+    margin: 15px 0;
+    font-size: 14px;
+    color: var(--text-color-secondary);
+    display: flex;
+    align-items: center;
+}
+
+.dev-mode-toggle input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.aws-form-group.dev-credentials {
+    padding: 8px;
+    background-color: rgba(255, 153, 0, 0.1);
+    border-left: 3px solid var(--orange-accent);
+}
+
+/* Botões relacionados à AWS */
+.aws-btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    margin-top: 15px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.aws-btn:hover {
+    background-color: var(--primary-hover);
+}
+
+.aws-btn.secondary-btn {
+    background-color: var(--secondary-color);
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.aws-btn.secondary-btn:hover {
+    background-color: var(--secondary-hover);
+}
+
+/* Status da conexão */
+.connection-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 500;
+}
+
+.status-disconnected {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.status-connecting {
+    background-color: #fff8e1;
+    color: #ff8f00;
+}
+
+.status-connected {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.status-previous-session {
+    background-color: #e3f2fd;
+    color: #1565c0;
+    border: 1px dashed #1565c0;
+}
+
+/* Loading styles refinados */
+.loading {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--text-color-secondary);
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    font-style: italic;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+.loading::before {
+    content: "";
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid rgba(50, 116, 217, 0.3);
+    border-top: 3px solid var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
+}
+
+.no-instances {
+    text-align: center;
+    padding: 30px 20px;
+    color: var(--warning-color);
+    background-color: rgba(255, 153, 0, 0.05);
+    border: 1px dashed var(--warning-color);
+    border-radius: 4px;
+    font-style: italic;
+}
+
+/* Botões de análise */
+.analysis-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+    gap: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.analysis-actions button {
+    min-width: 150px;
+}
+
+/* Botão Nova Análise (secundário) */
+.aws-btn.secondary-btn {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.aws-btn.secondary-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Botão Fechar Análise (azul como o exportar) */
+#close-analysis {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+#close-analysis:hover {
+    background-color: var(--accent-color-hover);
+}
+
+/* Garantir que o botão Analisar Instâncias seja destacado */
+#connect-aws-btn {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+    font-weight: 600;
+    margin-top: 20px;
+    padding: 12px 15px;
+}
+
+#connect-aws-btn:hover {
+    background-color: var(--accent-color-hover);
 } 

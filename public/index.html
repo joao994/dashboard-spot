@@ -6,7 +6,37 @@
     <title>Dashboard de Instâncias Spot AWS</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1009.0/aws-sdk.min.js"></script>
+    <!-- AWS SDK com fallback e tratamento de erro -->
+    <script>
+        // Função para detectar se o SDK AWS foi carregado corretamente
+        function checkAwsSdkLoaded() {
+            if (typeof AWS === 'undefined') {
+                console.error('AWS SDK não foi carregado corretamente');
+                document.getElementById('aws-sdk-error').style.display = 'block';
+            } else {
+                console.log('AWS SDK carregado com sucesso: ' + AWS.VERSION);
+            }
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1520.0/aws-sdk.min.js" 
+            onerror="console.error('Erro ao carregar o AWS SDK da CDN primária')" 
+            onload="checkAwsSdkLoaded()"></script>
+    <!-- Fallback para versão local caso a CDN falhe -->
+    <script>
+        window.addEventListener('error', function(e) {
+            if (e.target.src && e.target.src.includes('aws-sdk')) {
+                console.log('Tentando carregar AWS SDK do fallback local');
+                const script = document.createElement('script');
+                script.src = '/aws-sdk-update.js';
+                script.onload = checkAwsSdkLoaded;
+                script.onerror = function() {
+                    console.error('Falha ao carregar o AWS SDK do fallback');
+                    document.getElementById('aws-sdk-error').style.display = 'block';
+                };
+                document.head.appendChild(script);
+            }
+        }, true);
+    </script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&display=swap">
     <link rel="stylesheet" href="styles.css">
@@ -31,6 +61,12 @@
         </div>
     </header>
     
+    <!-- Alerta de erro do SDK -->
+    <div id="aws-sdk-error" style="display:none; background-color:#f8d7da; color:#721c24; padding:10px; margin:10px; border-radius:5px; text-align:center;">
+        <strong>Erro:</strong> Não foi possível carregar o AWS SDK. As funções de conexão com a AWS não estarão disponíveis.
+        <button onclick="window.location.reload()" style="margin-left:10px; padding:5px 10px; background:#721c24; color:white; border:none; border-radius:3px; cursor:pointer;">Recarregar página</button>
+    </div>
+    
     <!-- Sidebar para conexão AWS -->
     <aside class="sidebar">
         <button class="sidebar-close" id="sidebar-close">&times;</button>
@@ -39,18 +75,31 @@
             <p>Forneça suas credenciais da AWS para calcular a economia potencial com instâncias spot em sua conta.</p>
             
             <div id="connection-status" class="connection-status status-disconnected">
-                Não conectado
+                Desconectado
             </div>
             
-            <form id="aws-credentials-form" class="aws-form">
+            <form id="aws-credentials-form" class="aws-form" onsubmit="connectToAws(); return false;">
                 <div class="aws-form-group">
-                    <label for="aws-access-key">Access Key ID:</label>
-                    <input type="text" id="aws-access-key" placeholder="AKIAIOSFODNN7EXAMPLE">
+                    <label for="aws-account">Número da Conta AWS:</label>
+                    <input type="text" id="aws-account" placeholder="123456789012">
                 </div>
                 
-                <div class="aws-form-group">
-                    <label for="aws-secret-key">Secret Access Key:</label>
-                    <input type="password" id="aws-secret-key" placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                <!-- Campos opcionais para ambiente de desenvolvimento local -->
+                <div class="dev-mode-toggle" style="display: none;">
+                    <label>
+                        <input type="checkbox" id="dev-mode-toggle">
+                        Modo de desenvolvimento local
+                    </label>
+                </div>
+                
+                <div class="aws-form-group dev-credentials hide">
+                    <label for="aws-local-access-key">Access Key (apenas para dev local):</label>
+                    <input type="text" id="aws-local-access-key" placeholder="AKIAIOSFODNN7EXAMPLE">
+                </div>
+                
+                <div class="aws-form-group dev-credentials hide">
+                    <label for="aws-local-secret-key">Secret Key (apenas para dev local):</label>
+                    <input type="password" id="aws-local-secret-key" placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
                 </div>
                 
                 <div class="aws-form-group">
@@ -80,15 +129,14 @@
                     </select>
                 </div>
                 
-                <button id="connect-aws-btn" class="aws-btn">Analisar Instâncias</button>
-                <button id="save-credentials-btn" class="aws-btn">Salvar Credenciais (Local)</button>
+                <button type="submit" id="connect-aws-btn" class="aws-btn">Analisar Instâncias</button>
             </form>
             
             <div id="credentials-status" class="success-message hide">Credenciais salvas localmente com sucesso!</div>
             
             <div class="aws-info">
-                <p><strong>Nota de Segurança:</strong> Suas credenciais são utilizadas apenas localmente no navegador e não são enviadas para nossos servidores.</p>
-                <p><strong>Permissões necessárias:</strong> ec2:DescribeInstances</p>
+                <p><strong>Nota de Segurança:</strong> A aplicação utilizará assume-role para acessar a conta informada.</p>
+                <p><strong>Role necessária:</strong> worker-node-group</p>
             </div>
         </div>
         
@@ -168,7 +216,10 @@
                     </tbody>
                 </table>
                 
-                <button id="close-analysis" class="aws-btn">Fechar Análise</button>
+                <div class="analysis-actions">
+                    <button id="new-analysis-btn" class="aws-btn secondary-btn">Nova Análise</button>
+                    <button id="close-analysis" class="aws-btn">Fechar Análise</button>
+                </div>
             </div>
             
             <div class="dashboard-controls">
@@ -271,7 +322,7 @@
             <div class="dashboard-card">
                 <div class="section-header">
                     <h2>Dados Detalhados</h2>
-                    <button id="update-spot-price-btn" class="btn">Atualizar Preço Spot</button>
+                    <button id="update-spot-price-btn" class="btn">Atualizar Preço Spot da Região Selecionada</button>
                 </div>
                 <div id="table-container">
                     <table id="spot-data-table">
